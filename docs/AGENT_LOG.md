@@ -13,3 +13,4 @@
 | 2026-07-13 | 仓库初始化 | Git / GitHub CLI | 初始化本地 `main` 分支，提交 `6d29c62`；创建公开仓库 `HrrToT/Todex`，设置 `origin` 并推送首次文档提交。 |
 | 2026-07-13 | 版本路线 | `superpowers:brainstorming` | 确认开发阶段与产品路线图：本课程只承诺 V1.0；可靠性增强进入 V1.1，运行时受控多模型协作进入 V1.2，团队和跨平台能力进入 V2.0。 |
 | 2026-07-13 | 治理机制 | `superpowers:brainstorming` | 确认工作区边界、敏感文件硬拒绝、三级风险分类、四种审批作用域、7 天前缀许可和 HITL 状态机；确定由 Mock LLM 与 Fake Runner 覆盖核心机制测试。 |
+| 2026-07-13 | 反馈与记忆 | `superpowers:brainstorming` | 确认固定校验命令、3 次修复上限、失败分类、带证据轻量记忆、按需上下文装配和 SQLite/Windows Credential Manager 数据边界。 |

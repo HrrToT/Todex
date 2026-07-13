@@ -67,13 +67,23 @@ Todex 是一个面向小型 Node.js 与 Python 代码仓库的轻量 coding agen
 ## 6. 待完成章节
 
 - 用户故事与完整功能规约
-- 反馈分类和记忆检索
-- 数据模型、上下文构建与完整动作协议
 - 完整安全威胁模型与非功能性需求
 - WebUI 信息架构与 Open Design 使用说明
 - 验收标准、风险和未决问题
 
-## 7. 范围与演进路线图
+## 7. 反馈闭环、记忆与数据模型
+
+测试、lint、typecheck 与 build 是 Todex 的客观反馈传感器。每次产生 patch 后，`VerificationRunner` 只执行用户确认或 Demo 冻结的 `commandId`，将结构化 `VerificationResult` 回灌下一轮 LLM 上下文。失败分类至少包括 `passed`、`test_failure`、`quality_failure`、`build_failure`、`command_not_found`、`dependency_missing`、`timeout`、`execution_error` 和 `cancelled`。
+
+默认 `maxRepairAttempts` 为 3。只有失败校验后的再次代码修复才消耗修复次数；环境缺失、依赖缺失、超时和不可恢复执行错误不会被错误地当作代码问题反复修补。未配置已确认校验命令的 Run 只能标记为 `completed_unverified`，不得声称验证通过。
+
+项目级轻量记忆只保存可解释的项目画像、已验证命令、项目约定、审批偏好、失败修复摘要与成功 Run 摘要。桌面端将这些数据放在 Todex 应用数据目录的 SQLite 中，不写回用户仓库；公网 Demo 使用可重置的临时存储。API Key 永远只由 Windows Credential Manager 保存，数据库仅保存 `credentialRef`。
+
+跨会话记忆按可信度区分：项目探测和用户确认的条目为 `verified`；Agent 写入的条目必须关联工具 trace 证据，标为 `agent_observed` 且低优先级；无工具证据的模型主观推断不可持久化。Context Builder 按当前任务、校验阶段和失败类型选择记忆，并限制数量与文本预算。
+
+完整的反馈协议、记忆策略、实体字段与确定性测试见 [反馈、记忆与数据模型设计](architecture/2026-07-13-feedback-memory-and-data-model.md)。
+
+## 8. 范围与演进路线图
 
 ### V1.0：本课程交付范围
 
