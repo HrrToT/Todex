@@ -220,12 +220,21 @@ export const memoryEntrySchema = z
     ]),
     trustLevel: z.enum(["verified", "agent_observed"]),
     content: z.string().min(1),
-    sourceTraceIds: z.array(z.string().min(1)).min(1),
+    sourceTraceIds: z.array(z.string().min(1)),
     createdAt: z.string().min(1),
     updatedAt: z.string().min(1),
     deletedAt: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.trustLevel === "agent_observed" && value.sourceTraceIds.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "agent_observed memory requires at least one source trace id",
+        path: ["sourceTraceIds"],
+      });
+    }
+  });
 export type MemoryEntry = z.infer<typeof memoryEntrySchema>;
 
 export const traceEventSchema = z

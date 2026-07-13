@@ -257,21 +257,60 @@ describe("entity schemas", () => {
     ).toThrow();
   });
 
-  it("MemoryEntry parses and rejects empty sourceTraceIds", () => {
-    const valid = {
+  it("MemoryEntry accepts verified project_profile with empty sourceTraceIds", () => {
+    const entry = {
       memoryId: "m1",
       projectId: "p1",
-      kind: "project_convention",
+      kind: "project_profile",
       trustLevel: "verified",
-      content: "use tabs",
-      sourceTraceIds: ["t1"],
+      content: "node project",
+      sourceTraceIds: [],
       createdAt: "2026-07-13T00:00:00Z",
       updatedAt: "2026-07-13T00:00:00Z",
     };
-    expect(memoryEntrySchema.parse(valid)).toEqual(valid);
-    expect(() =>
-      memoryEntrySchema.parse({ ...valid, sourceTraceIds: [] }),
-    ).toThrow();
+    expect(memoryEntrySchema.parse(entry)).toEqual(entry);
+  });
+
+  it("MemoryEntry accepts verified_command with empty sourceTraceIds", () => {
+    const entry = {
+      memoryId: "m2",
+      projectId: "p1",
+      kind: "verified_command",
+      trustLevel: "verified",
+      content: "npm test",
+      sourceTraceIds: [],
+      createdAt: "2026-07-13T00:00:00Z",
+      updatedAt: "2026-07-13T00:00:00Z",
+    };
+    expect(memoryEntrySchema.parse(entry)).toEqual(entry);
+  });
+
+  it("MemoryEntry rejects agent_observed with empty sourceTraceIds", () => {
+    const entry = {
+      memoryId: "m3",
+      projectId: "p1",
+      kind: "failure_resolution",
+      trustLevel: "agent_observed",
+      content: "fix by x",
+      sourceTraceIds: [],
+      createdAt: "2026-07-13T00:00:00Z",
+      updatedAt: "2026-07-13T00:00:00Z",
+    };
+    expect(() => memoryEntrySchema.parse(entry)).toThrow();
+  });
+
+  it("MemoryEntry accepts agent_observed with at least one trace id", () => {
+    const entry = {
+      memoryId: "m4",
+      projectId: "p1",
+      kind: "failure_resolution",
+      trustLevel: "agent_observed",
+      content: "fix by x",
+      sourceTraceIds: ["trace-1"],
+      createdAt: "2026-07-13T00:00:00Z",
+      updatedAt: "2026-07-13T00:00:00Z",
+    };
+    expect(memoryEntrySchema.parse(entry)).toEqual(entry);
   });
 
   it("TraceEvent parses and rejects bad type", () => {
