@@ -37,7 +37,36 @@ Todex 是一个面向小型 Node.js 与 Python 代码仓库的轻量 coding agen
 
 `harness-core` 不依赖 Electron、React、真实 LLM 或现成 agent 编排框架。真实 LLM 与 `MockLLM` 实现相同的抽象接口。
 
-## 4. 已确认工具集
+### 组件数据流
+
+桌面端或 Demo WebUI 将用户任务提交给宿主适配层；适配层创建 `RunSession` 并调用 `harness-core`。Core 依次调用 Context Builder、LLMClient、Action Validator、Guardrail 和 Tool Dispatcher；工具结果、diff、审批状态和校验结果以 `TraceEvent` 回到 Core，并由宿主实时渲染。桌面适配层提供本地工作区、SQLite 与 Credential Manager；Demo 适配层只提供受限示例工作区、临时存储和 Mock LLM。
+
+### 技术选型与理由
+
+| 层次 | 选择 | 理由 |
+| --- | --- | --- |
+| 核心语言 | TypeScript 严格类型 | Electron、WebUI、Core、Mock 和 CI 共享类型与 npm 工具链，便于辅助模型按模块协作。 |
+| WebUI | React + Vite | 适合高频状态更新的任务工作台，并与 Electron 和 Demo 共用 UI 组件。 |
+| 桌面分发 | Electron + electron-builder + NSIS | 支持 Windows x64 安装包、原生工作区访问和 Release 构建。 |
+| Harness | 自研 TypeScript 主循环 | 满足不得依赖 LangChain/AutoGen/CrewAI 等高层 agent runner 的课程边界。 |
+| LLM | OpenAI-compatible HTTP Client | 通过用户提供的 base URL/model 支持 GLM、DeepSeek、Qwen 等兼容服务；Mock LLM 实现同一接口。 |
+| 持久化 | SQLite + 应用数据目录 | 适合本地 Run、trace、记忆和审批规则的可查询持久化，不污染用户仓库。 |
+| 凭据 | Windows Credential Manager，经 keytar 适配层 | 真实 Key 不落入代码、数据库、日志或明文配置。 |
+| 测试 | Vitest + Fake Runner/Clock；Playwright 用于 UI 冒烟 | Core 确定性单测不依赖网络，桌面/WebUI 再做用户流程验证。 |
+| CI/CD | GitHub Actions | 作为唯一实际 CI，执行单测、构建和 Windows Release 产物。 |
+| 公网 Demo | Node 托管的 `apps/demo-web`，部署到 Render | Demo 需要运行 Core 和受限示例工作区；选择低成本的 Node 服务部署，而非纯静态站点。 |
+
+## 4. 凭据与分发设计
+
+### 凭据生命周期
+
+首次真实模型运行前，桌面端在设置页以隐藏输入引导用户提供 API Key；适配层将 Key 写入 Windows Credential Manager，并在 SQLite 仅保存不可逆的 `credentialRef`。设置页只能显示已配置/未配置，支持更新和清除。模型调用时由适配层按 `credentialRef` 临时读取 Key 发送 HTTPS 请求；日志、trace、错误消息和导出均使用脱敏规则。Demo WebUI 不展示、不接收也不存储真实 Key。
+
+### 分发与部署
+
+V1.0 使用 GitHub Release 分发未签名的 Windows 10/11 x64 NSIS 安装包。README 必须说明下载位置、目标平台、首次运行可能出现的 SmartScreen 提示、校验信息、Credential Manager 配置方式和限制。课程要求的公网 WebUI 由 Render 托管为受限 Mock Demo；它只暴露内置 Node/Python 示例仓库和可重置运行状态。CI 在 push 时运行测试，在 Release 时产出安装包。
+
+## 5. 已确认工具集
 
 - `list_files`
 - `read_file`
@@ -50,7 +79,7 @@ Todex 是一个面向小型 Node.js 与 Python 代码仓库的轻量 coding agen
 
 所有动作先经过结构校验与 Guardrail，LLM 无法绕过该路径直接执行外部效果。
 
-## 5. 领域与机制设计：治理、HITL 与工作区边界
+## 6. 领域与机制设计：治理、HITL 与工作区边界
 
 治理是 Todex 的主要深入机制。所有 LLM 动作必须经过 `Action Validator -> Workspace Boundary Check -> Risk Classifier -> Approval Policy Check -> Tool Dispatcher`；不存在绕过 Guardrail 直接写文件或执行命令的路径。
 
@@ -64,7 +93,7 @@ Todex 是一个面向小型 Node.js 与 Python 代码仓库的轻量 coding agen
 
 完整的风险分类、审批指纹、状态迁移、审计字段和确定性测试矩阵见 [治理与 HITL 设计](architecture/2026-07-13-governance-and-hitl-design.md)。
 
-## 6. 用户与用户故事
+## 7. 用户与用户故事
 
 Todex 面向在 Windows 上维护中小型 Node.js 或 Python 仓库、希望让 Agent 辅助定位 bug 和完成小范围改动的个人开发者与学生开发者。它不试图替代企业级云端协作平台或完全自治的代码机器人；价值在于把本地代码修改置于可见 diff、客观测试反馈、人工审批和审计 trace 中。
 
@@ -78,7 +107,7 @@ Todex 面向在 Windows 上维护中小型 Node.js 或 Python 仓库、希望让
 | US-06 | 作为开发者，我想查看、编辑或删除项目记忆和审批偏好。 | 条目可管理，删除后不再进入 Context Builder。 |
 | US-07 | 作为评阅者，我想访问无需 Key 的公网 WebUI，复现治理和反馈机制。 | Demo 仅操作内置示例和 Mock LLM，可重置且无自由 shell。 |
 
-## 7. 功能规约
+## 8. 功能规约
 
 | 模块 | 输入 | 行为 | 输出 | 边界与错误处理 |
 | --- | --- | --- | --- | --- |
@@ -91,7 +120,7 @@ Todex 面向在 Windows 上维护中小型 Node.js 或 Python 仓库、希望让
 | 项目记忆 | 探测、用户编辑、带证据 Agent 观察 | 持久化、排序、按需装配、编辑删除 | `MemoryEntry` 列表 | 无 trace 证据的 Agent 记忆拒绝写入 |
 | 公网 Demo | 预设任务、内置示例、Mock 脚本 | 复用 Harness Core 演示拦截和修复 | 可重置 trace、diff、测试结果 | 禁止真实 Key、自由 shell、本地路径和用户上传代码 |
 
-## 8. WebUI 信息架构与设计方法
+## 9. WebUI 信息架构与设计方法
 
 启动后直接进入开发任务工作台，而不是营销页面。桌面端和线上 Demo 复用主要布局，但后者隐藏本地工作区与真实模型设置。
 
@@ -107,7 +136,7 @@ Todex 面向在 Windows 上维护中小型 Node.js 或 Python 仓库、希望让
 
 V1.0 采用 Open Design 作为前端设计方法与实现参考，并在开始前端任务前启用/安装对应 skill、在 `AGENT_LOG.md` 记录实际使用。UI 使用 React 可访问性优先组件和 Lucide 图标，保持开发工具风格：任务工作台为首屏，审批/失败/未验证以清晰状态呈现，diff/命令输出/trace 使用等宽字体，窄屏不遮挡关键操作。
 
-## 9. 安全威胁模型与非功能性需求
+## 10. 安全威胁模型与非功能性需求
 
 Todex 保护的资产包括真实 API Key、用户本地代码和敏感文件、用户 Windows 系统与其他目录、以及 trace/项目记忆/Demo 运行环境。它是工作区级治理工具，而不是操作系统级沙箱：它降低模型越权与误操作风险，但不承诺在恶意本地程序、被攻破 Windows 账户或用户主动批准高风险动作时提供完全隔离。
 
@@ -135,7 +164,7 @@ Todex 保护的资产包括真实 API Key、用户本地代码和敏感文件、
 | 可访问性 | 关键动作键盘可达、有可见焦点与文本/图标语义；状态不只用颜色表达 |
 | 兼容性 | 正式支持 Windows 10/11 x64 与 Node.js/Python 小型仓库；不承诺其他桌面系统或大型 monorepo |
 
-## 10. 验收标准、风险与未决问题
+## 11. 验收标准、风险与未决问题
 
 | 编号 | V1.0 客观验收标准 |
 | --- | --- |
@@ -162,7 +191,7 @@ Todex 保护的资产包括真实 API Key、用户本地代码和敏感文件、
 | Demo 免费部署限制 | 采用低成本、受限、可重置设计，并保留本地可运行 Demo 作为备份 |
 | 规约仍可能有歧义 | 使用陌生 agent 冷启动验证 1--2 个任务，记录问题并修订 SPEC/PLAN |
 
-## 11. 反馈闭环、记忆与数据模型
+## 12. 反馈闭环、记忆与数据模型
 
 测试、lint、typecheck 与 build 是 Todex 的客观反馈传感器。每次产生 patch 后，`VerificationRunner` 只执行用户确认或 Demo 冻结的 `commandId`，将结构化 `VerificationResult` 回灌下一轮 LLM 上下文。失败分类至少包括 `passed`、`test_failure`、`quality_failure`、`build_failure`、`command_not_found`、`dependency_missing`、`timeout`、`execution_error` 和 `cancelled`。
 
@@ -174,7 +203,9 @@ Todex 保护的资产包括真实 API Key、用户本地代码和敏感文件、
 
 完整的反馈协议、记忆策略、实体字段与确定性测试见 [反馈、记忆与数据模型设计](architecture/2026-07-13-feedback-memory-and-data-model.md)。
 
-## 12. 范围与演进路线图
+主数据模型由 `ProjectProfile`、`ConfiguredCommand`、`RunSession`、`Action`、`ToolResult`、`VerificationResult`、`ApprovalRequest`、`ApprovalGrant`、`MemoryEntry`、`TraceEvent` 和 `ModelConfigRef` 构成。它们的字段、关系、约束和脱敏规则以链接架构文档为准；真实 API Key 不属于任何持久化实体。
+
+## 13. 范围与演进路线图
 
 ### V1.0：本课程交付范围
 
