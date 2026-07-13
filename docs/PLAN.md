@@ -9,7 +9,7 @@
 
 **Architecture:** TypeScript pnpm monorepo，以 `packages/harness-core` 提供无 Electron/真实 LLM 依赖的主循环、治理、工具、反馈和记忆。`apps/desktop` 提供本地工作区与凭据适配，`apps/demo-web` 提供受限示例与 Mock LLM；二者复用 contracts 和 UI。
 
-**Tech Stack:** TypeScript strict、pnpm、Vitest、React、Vite、Electron、electron-builder、SQLite、keytar、Playwright、GitHub Actions、Render。
+**Tech Stack:** TypeScript strict、pnpm 10.12.1、Vitest、Zod、ESLint 9 flat config、typescript-eslint、React、Vite、Electron、electron-builder、SQLite、keytar、Playwright、GitHub Actions、Render。
 
 ---
 
@@ -55,6 +55,7 @@ T-006 + T-009 + T-011 -> T-012
 **Files:**
 - Create: `package.json`
 - Create: `pnpm-workspace.yaml`
+- Create: `eslint.config.mjs`
 - Create: `tsconfig.base.json`
 - Create: `vitest.workspace.ts`
 - Create: `packages/contracts/package.json`
@@ -64,7 +65,28 @@ T-006 + T-009 + T-011 -> T-012
 - Create: `packages/harness-core/test/smoke.test.ts`
 - Create: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: Write the failing workspace smoke test**
+- [ ] **Step 1: Establish the reproducible toolchain baseline**
+
+Create the root `package.json` with `"packageManager": "pnpm@10.12.1"`, workspace scripts, and these root development dependencies: `typescript`, `vitest`, `zod`, `eslint`, `@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`, and `@types/node`. Create `eslint.config.mjs` using ESLint flat config for `*.ts` and `*.tsx`, ignoring `dist`, `out`, `coverage`, `node_modules`, `.todex`, and generated release directories.
+
+The exact scripts are:
+
+```json
+{
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.base.json",
+    "lint": "eslint .",
+    "build": "pnpm -r build"
+  }
+}
+```
+
+Run: `corepack enable`
+Run: `pnpm install`
+Expected: creates `pnpm-lock.yaml` and installs the declared toolchain.
+
+- [ ] **Step 2: Write the failing workspace smoke test**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -77,30 +99,33 @@ describe("harness-core workspace", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify red**
+- [ ] **Step 3: Run the test and verify red**
 
 Run: `pnpm --filter @todex/harness-core test --run`
 Expected: FAIL because `src/index.ts` or `HARNESS_VERSION` does not exist.
 
-- [ ] **Step 3: Add the minimal workspace configuration and export**
+- [ ] **Step 4: Add the minimal Core export and workspace wiring**
 
 ```ts
 // packages/harness-core/src/index.ts
 export const HARNESS_VERSION = "0.1.0";
 ```
 
-Root scripts must include `test`, `typecheck`, `lint`, and `build`; CI must run `pnpm install --frozen-lockfile` followed by `pnpm test` and `pnpm typecheck`.
+CI must run `pnpm install --frozen-lockfile` followed by `pnpm lint`, `pnpm test`, and `pnpm typecheck`.
 
-- [ ] **Step 4: Verify green and typecheck**
+- [ ] **Step 5: Verify green, typecheck and lint**
 
 Run: `pnpm test --run`
 Expected: PASS with the workspace smoke test.
 Run: `pnpm typecheck`
 Expected: exit code 0.
 
-- [ ] **Step 5: Commit and record**
+Run: `pnpm lint`
+Expected: exit code 0.
 
-Run: `git add package.json pnpm-workspace.yaml tsconfig.base.json vitest.workspace.ts packages .github/workflows/ci.yml`
+- [ ] **Step 6: Commit and record**
+
+Run: `git add package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json vitest.workspace.ts eslint.config.mjs packages .github/workflows/ci.yml`
 Run: `git commit -m "chore: bootstrap Todex monorepo"`
 
 ### Task 2: T-002 定义共享动作、Run 与工具协议
@@ -133,7 +158,7 @@ Expected: FAIL because `parseAction` is undefined.
 
 - [ ] **Step 3: Implement discriminated contracts**
 
-Define `Action` as a discriminated union for `list_files`, `read_file`, `search_text`, `apply_patch`, `run_configured_command`, `run_shell_command_with_approval`, `remember`, and `finish`. Define `RunStatus`, `VerificationClassification`, `ApprovalScope`, `TraceEvent`, `ConfiguredCommand`, and `MemoryEntry`; implement `parseAction` with Zod validation.
+Use the complete field tables in SPEC section 5 as the only schema authority. Define the eight `Action` variants and the complete `RunStatus`, `ConfiguredCommand`, `VerificationResult`, `ApprovalRequest`, `MemoryEntry`, `TraceEvent`, `RunSession`, and `ToolResult` shapes exactly as specified; implement `parseAction` with the root Zod dependency. Do not import or require any `docs/architecture` file to decide fields.
 
 - [ ] **Step 4: Verify green**
 
@@ -603,11 +628,13 @@ Expected: FAIL because no artifact or configured Demo URL exists.
 
 - [ ] **Step 3: Implement packaging and CI**
 
-Configure electron-builder for unsigned NSIS x64 output. CI must run `pnpm test --run`, `pnpm typecheck`, and `pnpm build` on push; release workflow must upload the installer artifact. Add `verify:release` that checks artifact metadata and an HTTPS Demo URL. Update README only with commands actually executed, Credential Manager steps, SmartScreen disclosure, Render URL, limitations and directory structure.
+Configure electron-builder for unsigned NSIS x64 output. CI must run `pnpm lint`, `pnpm test --run`, `pnpm typecheck`, and `pnpm build` on push; release workflow must upload the installer artifact. Add `verify:release` that checks artifact metadata and an HTTPS Demo URL. Update README only with commands actually executed, Credential Manager steps, SmartScreen disclosure, Render URL, limitations and directory structure.
 
 - [ ] **Step 4: Verify end-to-end evidence**
 
 Run: `pnpm test --run`
+Expected: PASS.
+Run: `pnpm lint`
 Expected: PASS.
 Run: `pnpm typecheck`
 Expected: PASS.
