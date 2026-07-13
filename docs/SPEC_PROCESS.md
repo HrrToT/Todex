@@ -67,6 +67,10 @@
 
 决定：测试、lint、typecheck 与 build 由固定 `commandId` 驱动，作为确定性反馈传感器；修复上限为 3，环境问题不被误当作代码 bug。轻量记忆不采用 RAG，只保存可解释的项目事实与带 trace 证据的 Agent 观察。桌面端使用应用数据目录 SQLite，真实 API Key 只存 Windows Credential Manager。
 
+### 2026-07-13：用户故事与 WebUI 确认
+
+决定：V1.0 覆盖工作区探测、任务 trace/diff、审批、自修复、模型凭据、项目记忆和公网 Mock Demo 七条独立用户故事。WebUI 采用开发工具工作台布局，桌面端与 Demo 共享结构但不共享权限；前端设计方法选择 Open Design，并在实际前端开发前记录 skill 的安装和使用。
+
 ## AI 建议、人工判断与阶段性反思
 
 ### 被采纳的建议
