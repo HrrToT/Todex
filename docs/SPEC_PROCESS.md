@@ -75,6 +75,10 @@
 
 决定：Todex 定义为工作区级治理工具而非 OS 级沙箱；威胁模型覆盖 Key、敏感文件、路径逃逸、prompt injection、命令绕过、供应链和 Demo 滥用。V1.0 明确支持 Windows 10/11 x64，安装包默认未签名并在 README 透明说明 SmartScreen 风险。核心验收以 Mock LLM、示例仓库、Electron 安装包、GitHub Actions 和公网 Mock WebUI 的客观行为为准。
 
+### 2026-07-13：最终规约签字
+
+项目负责人确认 Todex V1.0 的完整设计，包括范围、架构、技术选型、治理、反馈、记忆、UI、安全、分发、验收与路线图。下一阶段切换到 `writing-plans`，随后执行陌生 agent 冷启动验证；在此之前不得开始实现代码。
+
 ## AI 建议、人工判断与阶段性反思
 
 ### 被采纳的建议
