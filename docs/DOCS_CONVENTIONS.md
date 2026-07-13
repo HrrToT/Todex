@@ -7,6 +7,8 @@
 
 本目录是 Todex 的课程交付文档中心。`SPEC.md`、`PLAN.md`、`SPEC_PROCESS.md`、`AGENT_LOG.md` 和 `REFLECTION.md` 的权威版本均放在本目录。`README.md` 是例外：它的权威版本位于仓库根目录，作为 GitHub 仓库首页与使用者入口。
 
+仓库根目录还保留与课程交付物同名的 Markdown 入口文件。它们只链接到本目录的权威正文，不复制内容；这样既保持单一事实来源，也让助教能从仓库根目录直接定位交付物。
+
 ## 2. 事实来源
 
 | 文档 | 是什么的唯一事实来源 | 不应承担的内容 |
@@ -48,3 +50,7 @@
 | 运行冷启动、单测、审查、构建或部署 | `verification/`、`AGENT_LOG.md`，必要时 `PLAN.md` |
 | 新增可真实运行的命令或发布方式 | `README.md` |
 | 期末复盘 | `REFLECTION.md`，由学生本人撰写 |
+
+## 6. CI 平台决定
+
+Todex 的实际 CI/CD 平台是 GitHub Actions，配置放在 `.github/workflows/`。本项目不建立 GitLab 项目，也不维护 GitLab pipeline；所有 CI 证据以 GitHub Actions 的 push、PR 和 Release 工作流为准。
