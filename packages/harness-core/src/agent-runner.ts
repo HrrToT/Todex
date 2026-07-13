@@ -78,7 +78,7 @@ export class AgentRunner {
         runId,
         projectId,
         task,
-        previousResults: results,
+        previousResults: [...results],
         trace: this.traceStore.list(runId),
       };
 

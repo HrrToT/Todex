@@ -115,6 +115,22 @@ describe("AgentRunner scripted loop", () => {
     expect(captured!.previousResults).toHaveLength(1);
     expect(captured!.previousResults[0].status).toBe("succeeded");
   });
+
+  it("snapshots previousResults per turn so later mutations do not leak back", async () => {
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/app.ts" },
+      { tool: "finish", summary: "done" },
+    ]);
+    const dispatcher = fakeDispatcher();
+    const runner = createRunner({ llm, dispatcher });
+
+    await runner.run({ runId: "r-snapshot", projectId: "p1", task: "snapshot test" });
+
+    expect(llm.contexts).toHaveLength(2);
+    expect(llm.contexts[0].previousResults).toHaveLength(0);
+    expect(llm.contexts[1].previousResults).toHaveLength(1);
+    expect(llm.contexts[1].previousResults[0].status).toBe("succeeded");
+  });
 });
 
 describe("AgentRunner malformed actions", () => {
@@ -193,7 +209,12 @@ describe("AgentRunner max steps", () => {
 
     expect(result.status).toBe("failed");
     expect(result.stopReason).toBe("max_steps_exceeded");
-    expect(result.trace.some((event) => event.type === "run_failed")).toBe(true);
+    expect(dispatcher.calls).toHaveLength(1);
+    expect(result.trace.map((event) => event.type)).toEqual([
+      "action_requested",
+      "tool_completed",
+      "run_failed",
+    ]);
   });
 });
 
@@ -213,7 +234,12 @@ describe("AgentRunner mock script exhausted", () => {
 
     expect(result.status).toBe("failed");
     expect(result.stopReason).toContain("mock script exhausted");
-    expect(result.trace.some((event) => event.type === "run_failed")).toBe(true);
+    expect(dispatcher.calls).toHaveLength(1);
+    expect(result.trace.map((event) => event.type)).toEqual([
+      "action_requested",
+      "tool_completed",
+      "run_failed",
+    ]);
   });
 });
 
@@ -251,5 +277,41 @@ describe("AgentRunner cancellation", () => {
       (event) => event.type === "action_requested",
     );
     expect(actionRequests).toHaveLength(2);
+  });
+});
+
+describe("AgentRunner dispatcher errors", () => {
+  it("records a failed ToolResult when dispatch throws and continues to finish", async () => {
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/app.ts" },
+      { tool: "finish", summary: "done" },
+    ]);
+    const dispatcher: ToolDispatcher = {
+      dispatch: async () => {
+        throw new Error("disk unavailable");
+      },
+    };
+    const runner = createRunner({ llm, dispatcher });
+
+    const result = await runner.run({
+      runId: "r-dispatch-err",
+      projectId: "p1",
+      task: "dispatch error test",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].status).toBe("failed");
+    expect(result.results[0].summary).toContain("dispatcher error: disk unavailable");
+    expect(llm.contexts).toHaveLength(2);
+    expect(llm.contexts[1].previousResults).toHaveLength(1);
+    expect(llm.contexts[1].previousResults[0].status).toBe("failed");
+    expect(llm.contexts[1].previousResults[0].summary).toContain("disk unavailable");
+    expect(result.trace.map((event) => event.type)).toEqual([
+      "action_requested",
+      "tool_completed",
+      "action_requested",
+      "run_completed",
+    ]);
   });
 });
