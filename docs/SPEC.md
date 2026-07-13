@@ -50,16 +50,30 @@ Todex 是一个面向小型 Node.js 与 Python 代码仓库的轻量 coding agen
 
 所有动作先经过结构校验与 Guardrail，LLM 无法绕过该路径直接执行外部效果。
 
-## 5. 待完成章节
+## 5. 领域与机制设计：治理、HITL 与工作区边界
+
+治理是 Todex 的主要深入机制。所有 LLM 动作必须经过 `Action Validator -> Workspace Boundary Check -> Risk Classifier -> Approval Policy Check -> Tool Dispatcher`；不存在绕过 Guardrail 直接写文件或执行命令的路径。
+
+- 所有路径必须解析为真实绝对路径并位于当前 `workspaceRoot` 内。路径穿越、绝对路径逃逸、符号链接逃逸和访问其他仓库、用户目录、系统目录或盘符根目录一律拒绝。
+- `.env`、`.npmrc`、`.pypirc`、`.netrc`、`credentials.*`、`secrets.*`、`*.pem`、`*.key`、SSH/AWS 凭据与 `.git/config` 均不可读取、写入或出现在 trace；`.env.example` 可读但不应包含真实凭据。
+- 普通读、搜索、工作区内普通源码/测试/文档 patch、已确认的精确校验命令默认允许并记录 trace。用户确认的项目命令以固定 `commandId` 映射到精确命令模板，LLM 不可替换其 shell 字符串。
+- 文件删除、大范围 patch、自由 shell、依赖安装、Git 变更、网络命令、CI/部署配置变更和超阈值命令必须审批。
+- 工作区外访问、敏感凭据访问、提权/系统配置、目标不可确定的破坏性操作、动态/混淆 PowerShell、复杂 shell 拼接或重定向结构一律拒绝；公网 Mock 宿主额外拒绝真实 Key 和自由 shell。
+- 审批选项为：仅本次允许、本轮任务允许、对相同命令前缀允许、拒绝。项目级前缀许可限定于同项目、同工具、同可执行文件和固定子命令，默认 7 天失效并可撤销；安装、删除、网络与破坏性 Git 操作不支持项目级前缀许可。
+- `RunSession` 状态至少包括 `Running`、`AwaitingApproval`、`Dispatching`、`Completed`、`Failed` 与 `Cancelled`。等待审批时主循环暂停；未批准审批不会在重启、超时或前端重连后自动执行。
+
+完整的风险分类、审批指纹、状态迁移、审计字段和确定性测试矩阵见 [治理与 HITL 设计](architecture/2026-07-13-governance-and-hitl-design.md)。
+
+## 6. 待完成章节
 
 - 用户故事与完整功能规约
-- 领域与机制设计：风险分类、审批粒度、HITL 状态机、反馈分类和记忆检索
-- 数据模型、上下文构建与动作协议
+- 反馈分类和记忆检索
+- 数据模型、上下文构建与完整动作协议
 - 完整安全威胁模型与非功能性需求
 - WebUI 信息架构与 Open Design 使用说明
 - 验收标准、风险和未决问题
 
-## 6. 范围与演进路线图
+## 7. 范围与演进路线图
 
 ### V1.0：本课程交付范围
 
