@@ -5,6 +5,7 @@ out/
 coverage/
 playwright-report/
 test-results/
+.worktrees/
 
 # Local configuration and credentials
 .env
@@ -23,4 +24,3 @@ test-results/
 .idea/
 .DS_Store
 Thumbs.db
-
