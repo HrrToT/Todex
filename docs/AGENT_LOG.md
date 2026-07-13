@@ -11,3 +11,4 @@
 | 2026-07-13 | 架构与分发 | `superpowers:brainstorming` | 确定 TypeScript monorepo 与共享 `harness-core`；真实产品为 Windows Electron，本地工作区和真实模型仅在桌面端，线上 WebUI 为无真实凭据的 Mock 演示站。 |
 | 2026-07-13 | 文档体系 | `superpowers:brainstorming` | 初始化 `docs/` 作为课程文档中心；正式计划和实现将等待完整设计确认、`writing-plans` 和冷启动验证。 |
 | 2026-07-13 | 仓库初始化 | Git / GitHub CLI | 初始化本地 `main` 分支，提交 `6d29c62`；创建公开仓库 `HrrToT/Todex`，设置 `origin` 并推送首次文档提交。 |
+| 2026-07-13 | 版本路线 | `superpowers:brainstorming` | 确认开发阶段与产品路线图：本课程只承诺 V1.0；可靠性增强进入 V1.1，运行时受控多模型协作进入 V1.2，团队和跨平台能力进入 V2.0。 |

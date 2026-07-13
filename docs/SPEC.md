@@ -59,3 +59,24 @@ Todex 是一个面向小型 Node.js 与 Python 代码仓库的轻量 coding agen
 - WebUI 信息架构与 Open Design 使用说明
 - 验收标准、风险和未决问题
 
+## 6. 范围与演进路线图
+
+### V1.0：本课程交付范围
+
+V1.0 是 Todex 的正式课程交付版，包含 Windows Electron 桌面端、Node.js/Python 双完整项目探测与反馈闭环、OpenAI-compatible 单模型接口、项目级轻量记忆、Mock LLM 确定性测试、工作区边界、HITL 审批、受限自修复和公网 Mock WebUI。
+
+V1.0 明确不包含云端访问用户真实本地仓库、用户登录和多人协作、运行时多 agent 编排、向量检索/RAG、macOS/Linux 桌面发行版、自动 `git push`/发布/生产部署、自由 shell 默认执行、特权容器和全语言生态支持。
+
+开发将依次经过：规约冻结与陌生 agent 冷启动验证；Harness 内核与 Mock 测试；治理和反馈闭环；Node/Python 适配；桌面端、WebUI 和凭据；公网 Demo、打包、CI 与交付收尾。
+
+### V1.1：可靠性和真实开发体验
+
+后续优先增强 Git 分支/worktree 创建、diff 分块接受或撤销、任务回滚、审批规则编辑、长任务恢复、trace 导出、Node/Python 环境探测和敏感信息扫描。
+
+### V1.2：受控多模型协作
+
+后续可将开发阶段的“主导 agent + 辅助模型”协作模式产品化：规划、局部补丁和独立审查由不同模型承担；子任务隔离在 worktree 中，设定文件范围和预算上限，并以测试与人工审批作为整合前提。
+
+### V2.0：团队和跨平台
+
+在单人本地模式稳定后，再考虑 macOS/Linux、团队策略和审计、Java/Go/Rust 适配器、插件化工具协议及受沙箱约束的远程执行器。
