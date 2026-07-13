@@ -71,6 +71,10 @@
 
 决定：V1.0 覆盖工作区探测、任务 trace/diff、审批、自修复、模型凭据、项目记忆和公网 Mock Demo 七条独立用户故事。WebUI 采用开发工具工作台布局，桌面端与 Demo 共享结构但不共享权限；前端设计方法选择 Open Design，并在实际前端开发前记录 skill 的安装和使用。
 
+### 2026-07-13：安全、质量与验收确认
+
+决定：Todex 定义为工作区级治理工具而非 OS 级沙箱；威胁模型覆盖 Key、敏感文件、路径逃逸、prompt injection、命令绕过、供应链和 Demo 滥用。V1.0 明确支持 Windows 10/11 x64，安装包默认未签名并在 README 透明说明 SmartScreen 风险。核心验收以 Mock LLM、示例仓库、Electron 安装包、GitHub Actions 和公网 Mock WebUI 的客观行为为准。
+
 ## AI 建议、人工判断与阶段性反思
 
 ### 被采纳的建议
