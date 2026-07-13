@@ -51,6 +51,7 @@ T-006 + T-009 + T-011 -> T-012
 
 **依赖：** 无。
 **建议责任：** GLM，可独立完成。
+**状态：** 已完成，冷启动验证 PR #1；实现 commits `d803fa2`。
 
 **Files:**
 - Create: `package.json`
@@ -65,7 +66,7 @@ T-006 + T-009 + T-011 -> T-012
 - Create: `packages/harness-core/test/smoke.test.ts`
 - Create: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: Establish the reproducible toolchain baseline**
+- [x] **Step 1: Establish the reproducible toolchain baseline**
 
 Create the root `package.json` with `"packageManager": "pnpm@10.12.1"`, workspace scripts, and these root development dependencies: `typescript`, `vitest`, `zod`, `eslint`, `@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`, and `@types/node`. Create `eslint.config.mjs` using ESLint flat config for `*.ts` and `*.tsx`, ignoring `dist`, `out`, `coverage`, `node_modules`, `.todex`, and generated release directories.
 
@@ -86,7 +87,7 @@ Run: `corepack enable`
 Run: `pnpm install`
 Expected: creates `pnpm-lock.yaml` and installs the declared toolchain.
 
-- [ ] **Step 2: Write the failing workspace smoke test**
+- [x] **Step 2: Write the failing workspace smoke test**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -99,12 +100,12 @@ describe("harness-core workspace", () => {
 });
 ```
 
-- [ ] **Step 3: Run the test and verify red**
+- [x] **Step 3: Run the test and verify red**
 
 Run: `pnpm --filter @todex/harness-core test --run`
 Expected: FAIL because `src/index.ts` or `HARNESS_VERSION` does not exist.
 
-- [ ] **Step 4: Add the minimal Core export and workspace wiring**
+- [x] **Step 4: Add the minimal Core export and workspace wiring**
 
 ```ts
 // packages/harness-core/src/index.ts
@@ -113,7 +114,7 @@ export const HARNESS_VERSION = "0.1.0";
 
 CI must run `pnpm install --frozen-lockfile` followed by `pnpm lint`, `pnpm test`, and `pnpm typecheck`.
 
-- [ ] **Step 5: Verify green, typecheck and lint**
+- [x] **Step 5: Verify green, typecheck and lint**
 
 Run: `pnpm test --run`
 Expected: PASS with the workspace smoke test.
@@ -123,7 +124,7 @@ Expected: exit code 0.
 Run: `pnpm lint`
 Expected: exit code 0.
 
-- [ ] **Step 6: Commit and record**
+- [x] **Step 6: Commit and record**
 
 Run: `git add package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json vitest.workspace.ts eslint.config.mjs packages .github/workflows/ci.yml`
 Run: `git commit -m "chore: bootstrap Todex monorepo"`
@@ -132,12 +133,13 @@ Run: `git commit -m "chore: bootstrap Todex monorepo"`
 
 **依赖：** T-001。
 **建议责任：** DeepSeek，可独立完成。
+**状态：** 已完成，冷启动验证 PR #1；实现 commit `a87325e`，P1 修复 commit `a04ad9f`。
 
 **Files:**
 - Modify: `packages/contracts/src/index.ts`
 - Create: `packages/contracts/test/contracts.test.ts`
 
-- [ ] **Step 1: Write failing schema tests**
+- [x] **Step 1: Write failing schema tests**
 
 ```ts
 it("accepts a read_file action", () => {
@@ -151,21 +153,21 @@ it("rejects an unknown tool", () => {
 });
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `pnpm --filter @todex/contracts test --run`
 Expected: FAIL because `parseAction` is undefined.
 
-- [ ] **Step 3: Implement discriminated contracts**
+- [x] **Step 3: Implement discriminated contracts**
 
 Use the complete field tables in SPEC section 5 as the only schema authority. Define the eight `Action` variants and the complete `RunStatus`, `ConfiguredCommand`, `VerificationResult`, `ApprovalRequest`, `MemoryEntry`, `TraceEvent`, `RunSession`, and `ToolResult` shapes exactly as specified; implement `parseAction` with the root Zod dependency. Do not import or require any `docs/architecture` file to decide fields.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
 Run: `pnpm --filter @todex/contracts test --run`
 Expected: PASS; malformed fields and every unknown tool throw a stable error.
 
-- [ ] **Step 5: Commit and record**
+- [x] **Step 5: Commit and record**
 
 Run: `git add packages/contracts`
 Run: `git commit -m "feat: define harness contracts"`
