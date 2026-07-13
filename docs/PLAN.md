@@ -184,7 +184,7 @@ Run: `git commit -m "feat: define harness contracts"`
 - Create: `packages/harness-core/src/agent-runner.ts`
 - Create: `packages/harness-core/test/agent-runner.test.ts`
 
-- [ ] **Step 1: Write the failing scripted-loop test**
+- [x] **Step 1: Write the failing scripted-loop test**
 
 ```ts
 it("records read_file then finish from a scripted LLM", async () => {
@@ -203,24 +203,26 @@ it("records read_file then finish from a scripted LLM", async () => {
 });
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `pnpm --filter @todex/harness-core test --run agent-runner.test.ts`
 Expected: FAIL because `ScriptedMockLlm` and `createRunner` are absent.
 
-- [ ] **Step 3: Implement the loop without a framework runner**
+- [x] **Step 3: Implement the loop without a framework runner**
 
 Implement `LlmClient.nextAction(context): Promise<unknown>`, `ScriptedMockLlm`, append-only `TraceStore`, and `AgentRunner.run`. The loop must validate every raw LLM result through `parseAction`, dispatch only validated actions, feed `ToolResult` back into the next context, and stop only on `finish`, cancellation, max steps, or terminal error.
 
-- [ ] **Step 4: Verify green and add malformed-action coverage**
+- [x] **Step 4: Verify green and add malformed-action coverage**
 
 Run: `pnpm --filter @todex/harness-core test --run agent-runner.test.ts`
 Expected: PASS. Add a test proving malformed LLM output becomes a trace error and never reaches the dispatcher.
 
-- [ ] **Step 5: Commit and record**
+- [x] **Step 5: Commit and record**
 
 Run: `git add packages/harness-core/src packages/harness-core/test`
 Run: `git commit -m "feat: add deterministic agent loop"`
+
+实际提交：`03e9ac5`（实现）与 `f57dad1`（P1 审查修复）。独立复验记录见 [T-003 验证](verification/2026-07-13-t-003-agent-loop.md)。
 
 ### Task 4: T-004 实现工作区边界、风险分类与审批状态机
 

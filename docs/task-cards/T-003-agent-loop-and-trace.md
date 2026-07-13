@@ -1,6 +1,6 @@
 # T-003：Mock LLM、Trace 与最小 Agent 主循环
 
-状态：ready
+状态：verified（待推送 PR）
 责任模型：GLM
 主导审查：Codex
 分支：`feat/t-003-agent-loop`
@@ -95,15 +95,23 @@ git commit -m "feat: add deterministic agent loop"
 
 ## 验收标准
 
-- [ ] Mock LLM 可确定性驱动“read_file -> finish”的循环，且 trace 顺序与 TDD 测试一致。
-- [ ] 原始 LLM 输出在 Dispatcher 之前经 `parseAction` 校验；非法输出绝不调度工具。
-- [ ] ToolResult 被带入下一次 `LlmTurnContext.previousResults`。
-- [ ] `finish` 不会调用 Dispatcher，且 Run 以 `completed` 停止。
-- [ ] 达到 maxSteps、Mock 脚本耗尽、取消时均有确定的停止状态和 trace 事件。
-- [ ] 全仓测试、typecheck、lint 均通过。
-- [ ] 只修改允许文件范围；无新增依赖、无 contracts 漂移。
+- [x] Mock LLM 可确定性驱动“read_file -> finish”的循环，且 trace 顺序与 TDD 测试一致。
+- [x] 原始 LLM 输出在 Dispatcher 之前经 `parseAction` 校验；非法输出绝不调度工具。
+- [x] ToolResult 被带入下一次 `LlmTurnContext.previousResults`。
+- [x] `finish` 不会调用 Dispatcher，且 Run 以 `completed` 停止。
+- [x] 达到 maxSteps、Mock 脚本耗尽、取消时均有确定的停止状态和 trace 事件。
+- [x] 全仓测试、typecheck、lint 均通过。
+- [x] 只修改允许文件范围；无新增依赖、无 contracts 漂移。
 
 ## 交付报告格式
 
 报告必须包含：状态（DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED）、修改文件、每个红绿命令及结果、commit hash、自审结果、任何假设或未解决问题。不得开始 T-004。
 
+## 实际交付记录
+
+- 实现分支：`feat/t-003-agent-loop`；基线：`main` 的 `713b73a`。
+- 责任模型：GLM。实现提交：`03e9ac5 feat: add deterministic agent loop`。
+- P1 审查修复：`f57dad1 test: strengthen agent loop failure coverage`。修复了 `previousResults` 历史上下文可变引用，并补强最大步数、脚本耗尽和 Dispatcher 异常分支测试。
+- 受控例外：`packages/harness-core/package.json` 与 `pnpm-lock.yaml` 增加 `@todex/contracts: workspace:*`，使 Core 经 workspace 包使用共享 contracts；未新增外部依赖，也未漂移 contracts。
+- 独立复验：2026-07-13，Harness 17/17、全仓 54/54、`typecheck` 与 `lint` 均通过。完整命令和审查结论见 [T-003 验证](../verification/2026-07-13-t-003-agent-loop.md)。
+- 未解决但不阻塞：包级 `build` 脚本尚不存在，根 `pnpm.cmd build` 只报告无可执行构建脚本；该基线问题留给后续构建/打包任务处理。`cancelledRuns` 的重用语义和公开观察对象的深度不可变性作为 P2 记录，不改变本任务验收结论。
