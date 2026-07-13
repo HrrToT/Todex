@@ -222,7 +222,7 @@ Expected: PASS. Add a test proving malformed LLM output becomes a trace error an
 Run: `git add packages/harness-core/src packages/harness-core/test`
 Run: `git commit -m "feat: add deterministic agent loop"`
 
-实际提交：`03e9ac5`（实现）与 `f57dad1`（P1 审查修复）。独立复验记录见 [T-003 验证](verification/2026-07-13-t-003-agent-loop.md)。
+实际提交：`03e9ac5`（实现）、`f57dad1`（P1 审查修复）及后续 CI 入口修复。独立复验记录见 [T-003 验证](verification/2026-07-13-t-003-agent-loop.md)。CI 在干净 checkout 暴露 `@todex/contracts` 的 `dist` 入口未构建；修复为 contracts 增加真实 TypeScript build，并在根测试前构建该 workspace 包。
 
 ### Task 4: T-004 实现工作区边界、风险分类与审批状态机
 

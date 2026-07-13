@@ -113,5 +113,6 @@ git commit -m "feat: add deterministic agent loop"
 - 责任模型：GLM。实现提交：`03e9ac5 feat: add deterministic agent loop`。
 - P1 审查修复：`f57dad1 test: strengthen agent loop failure coverage`。修复了 `previousResults` 历史上下文可变引用，并补强最大步数、脚本耗尽和 Dispatcher 异常分支测试。
 - 受控例外：`packages/harness-core/package.json` 与 `pnpm-lock.yaml` 增加 `@todex/contracts: workspace:*`，使 Core 经 workspace 包使用共享 contracts；未新增外部依赖，也未漂移 contracts。
-- 独立复验：2026-07-13，Harness 17/17、全仓 54/54、`typecheck` 与 `lint` 均通过。完整命令和审查结论见 [T-003 验证](../verification/2026-07-13-t-003-agent-loop.md)。
-- 未解决但不阻塞：包级 `build` 脚本尚不存在，根 `pnpm.cmd build` 只报告无可执行构建脚本；该基线问题留给后续构建/打包任务处理。`cancelledRuns` 的重用语义和公开观察对象的深度不可变性作为 P2 记录，不改变本任务验收结论。
+- CI 根因修复例外：GitHub Actions 的干净 checkout 无被忽略的 `packages/contracts/dist`，导致 Vite 无法解析 workspace 包的 export。为使 T-003 的 workspace 依赖在 CI 与任务卡的包级验收命令中真实可用，新增 `packages/contracts/tsconfig.build.json`、contracts 的 `build` 脚本，并让根及 Harness 的 `test` 在 Vitest 前构建 contracts；未新增依赖、未漂移 contracts schema。
+- 独立复验：2026-07-14，Harness 17/17、全仓 54/54、`typecheck`、`lint` 与真实 contracts `build` 均通过。完整命令和审查结论见 [T-003 验证](../verification/2026-07-13-t-003-agent-loop.md)。
+- 未解决但不阻塞：`cancelledRuns` 的重用语义和公开观察对象的深度不可变性作为 P2 记录，不改变本任务验收结论。

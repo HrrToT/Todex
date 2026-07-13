@@ -12,6 +12,7 @@
     }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run"
   },
   "dependencies": {
