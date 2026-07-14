@@ -130,7 +130,21 @@ export class AgentRunner {
     let request: ApprovalRequest;
     try {
       request = this.approvalStore.decide(input.approvalId, input.decision, now);
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "approval_scope_not_allowed") {
+        this.traceStore.append({
+          runId: state.runId,
+          type: "approval_decided",
+          payloadSummary: `scope rejected: ${input.decision}`,
+        });
+        return this.buildResult(
+          state,
+          "awaiting_approval",
+          "approval_scope_not_allowed",
+          this.approvalStore.get(input.approvalId) ?? state.pendingAction.approval,
+        );
+      }
       this.transitionSafely(state, "cancelled");
       this.traceStore.append({
         runId: state.runId,

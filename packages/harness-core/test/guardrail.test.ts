@@ -471,7 +471,9 @@ describe("Guardrail grant matching", () => {
     const { guardrail, store, clock } = makeGuardrail();
     const ctx = makeContext();
     const request = approveOnce(guardrail, store, runShell("npm install"), ctx);
-    store.decide(request.approvalId, "command_prefix", clock.now());
+    expect(() => store.decide(request.approvalId, "command_prefix", clock.now())).toThrow(
+      "approval_scope_not_allowed",
+    );
 
     const decision = guardrail.evaluate(runShell("npm install"), ctx);
     expect(decision.decision).toBe("require_approval");

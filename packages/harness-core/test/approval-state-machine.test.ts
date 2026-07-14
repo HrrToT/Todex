@@ -326,7 +326,7 @@ describe("InMemoryApprovalStore", () => {
     expect(store.matchesGrant(ctx, runShell("npm test"), clock.now())).toBe(false);
   });
 
-  it("does not issue command_prefix for install commands", () => {
+  it("rejects command_prefix for dependency_install requests and keeps pending", () => {
     const clock = new FakeClock();
     const store = new InMemoryApprovalStore({
       clock,
@@ -342,7 +342,13 @@ describe("InMemoryApprovalStore", () => {
       state: "pending",
       createdAt: clock.now().toISOString(),
     });
-    store.decide("a1", "command_prefix", clock.now());
+    expect(() => store.decide("a1", "command_prefix", clock.now())).toThrow(
+      "approval_scope_not_allowed",
+    );
+
+    const after = store.get("a1");
+    expect(after?.state).toBe("pending");
+    expect(after?.decision).toBeUndefined();
 
     const ctx: GovernanceContext = {
       runId: "r1",
@@ -941,5 +947,48 @@ describe("AgentRunner governance integration", () => {
     expect(result.status).toBe("completed");
     expect(dispatcher.calls).toHaveLength(2);
     expect(result.pendingApproval).toBeUndefined();
+  });
+
+  it("rejects command_prefix for npm install while awaiting approval and keeps pending", async () => {
+    const llm = new ScriptedMockLlm([
+      runShell("npm install"),
+      finish("done"),
+    ]);
+    const { guardrail, store, clock } = makeGovernance();
+    const dispatcher = fakeDispatcher();
+    const runner = createRunner({
+      llm,
+      dispatcher,
+      governance: guardrail,
+      approvalStore: store,
+      clock,
+    });
+
+    const first = await runner.run({
+      runId: "r-install-prefix",
+      projectId: "p1",
+      task: "install prefix test",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(first.status).toBe("awaiting_approval");
+    expect(dispatcher.calls).toHaveLength(0);
+    const approvalId = first.pendingApproval!.approvalId;
+
+    const rejected = await runner.decideApproval({
+      approvalId,
+      decision: "command_prefix",
+    });
+    expect(rejected.status).toBe("awaiting_approval");
+    expect(dispatcher.calls).toHaveLength(0);
+
+    const stillPending = store.get(approvalId);
+    expect(stillPending?.state).toBe("pending");
+    expect(stillPending?.decision).toBeUndefined();
+
+    const second = await runner.decideApproval({ approvalId, decision: "once" });
+    expect(second.status).toBe("completed");
+    expect(dispatcher.calls).toHaveLength(1);
+    expect(dispatcher.calls[0].action.tool).toBe("run_shell_command_with_approval");
   });
 });

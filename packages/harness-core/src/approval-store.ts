@@ -84,6 +84,10 @@ export class InMemoryApprovalStore {
       return { ...denied, riskReasons: [...denied.riskReasons] };
     }
 
+    if (decision === "command_prefix" && !this.isPrefixable(request)) {
+      throw new Error("approval_scope_not_allowed");
+    }
+
     const approved: ApprovalRequest = {
       ...request,
       state: "approved",
@@ -100,14 +104,12 @@ export class InMemoryApprovalStore {
         scope: "run",
       });
     } else if (decision === "command_prefix") {
-      if (this.isPrefixable(request)) {
-        this.grants.push({
-          runId: request.runId,
-          fingerprint: request.fingerprint,
-          scope: "command_prefix",
-          expiresAt: new Date(now.getTime() + SEVEN_DAYS_MS),
-        });
-      }
+      this.grants.push({
+        runId: request.runId,
+        fingerprint: request.fingerprint,
+        scope: "command_prefix",
+        expiresAt: new Date(now.getTime() + SEVEN_DAYS_MS),
+      });
     }
 
     return { ...approved, riskReasons: [...approved.riskReasons] };
