@@ -377,6 +377,15 @@ describe("Guardrail shell classification", () => {
     expect(decision).toMatchObject({ decision: "deny", reason: "complex_shell" });
   });
 
+  it("denies a quoted powershell -e encoded alias", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(
+      runShell('powershell "-e" SQBFAFgA'),
+      makeContext(),
+    );
+    expect(decision).toMatchObject({ decision: "deny", reason: "complex_shell" });
+  });
+
   it("denies pwsh -enc encoded alias", () => {
     const { guardrail } = makeGuardrail();
     const decision = guardrail.evaluate(

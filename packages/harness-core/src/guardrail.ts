@@ -137,7 +137,8 @@ function detectPowerShellObfuscation(command: string): string | undefined {
 
   const tokens = rest.trim().split(/\s+/).filter((s) => s !== "");
   for (const token of tokens) {
-    const flag = token.toLowerCase().split(":")[0];
+    const normalizedToken = token.replace(/^(['"])(.*)\1$/, "$2");
+    const flag = normalizedToken.toLowerCase().split(":")[0];
     if (POWERSHELL_ENCODED_FLAGS.has(flag)) return "complex_shell";
     if (POWERSHELL_POLICY_FLAGS.has(flag)) return "privilege_or_system_command";
   }
