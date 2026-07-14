@@ -1,6 +1,6 @@
 # T-003：Mock LLM、Trace 与最小 Agent 主循环
 
-状态：verified（待推送 PR）
+状态：verified
 责任模型：GLM
 主导审查：Codex
 分支：`feat/t-003-agent-loop`
@@ -110,6 +110,7 @@ git commit -m "feat: add deterministic agent loop"
 ## 实际交付记录
 
 - 实现分支：`feat/t-003-agent-loop`；基线：`main` 的 `713b73a`。
+- Pull Request：[PR #2](https://github.com/HrrToT/Todex/pull/2)，GitHub Actions `ci` 已通过；合并状态由 GitHub PR 页面维护。
 - 责任模型：GLM。实现提交：`03e9ac5 feat: add deterministic agent loop`。
 - P1 审查修复：`f57dad1 test: strengthen agent loop failure coverage`。修复了 `previousResults` 历史上下文可变引用，并补强最大步数、脚本耗尽和 Dispatcher 异常分支测试。
 - 受控例外：`packages/harness-core/package.json` 与 `pnpm-lock.yaml` 增加 `@todex/contracts: workspace:*`，使 Core 经 workspace 包使用共享 contracts；未新增外部依赖，也未漂移 contracts。
