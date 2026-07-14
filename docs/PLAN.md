@@ -239,7 +239,7 @@ Run: `git commit -m "feat: add deterministic agent loop"`
 - Create: `packages/harness-core/test/guardrail.test.ts`
 - Create: `packages/harness-core/test/approval-state-machine.test.ts`
 
-- [ ] **Step 1: Write failing hard-deny and approval tests**
+- [x] **Step 1: Write failing hard-deny and approval tests**
 
 ```ts
 it("denies a path escaping the workspace", () => {
@@ -256,24 +256,26 @@ it("pauses a free shell command until approval", async () => {
 });
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `pnpm --filter @todex/harness-core test --run guardrail.test.ts approval-state-machine.test.ts`
 Expected: FAIL because classifier and approval state machine do not exist.
 
-- [ ] **Step 3: Implement deterministic governance**
+- [x] **Step 3: Implement deterministic governance**
 
 Implement canonical workspace resolution, sensitive path deny rules, `allow | require_approval | deny` classification, immutable `ApprovalRequest`, scopes `once | run | command_prefix | deny`, and state transitions `running -> awaiting_approval -> dispatching/running/cancelled`. Integrate GovernanceController into AgentRunner before every Dispatcher call; a hard denial must never dispatch and an approval-required action must suspend and resume only after a valid decision. Persist prefix grants only for safe normalized command fingerprints and set a 7-day expiry. The detailed frozen contract is [T-004 implementation plan](superpowers/plans/2026-07-14-t-004-governance.md) and its GLM task card.
 
-- [ ] **Step 4: Verify green plus bypass cases**
+- [x] **Step 4: Verify green plus bypass cases**
 
 Run: `pnpm --filter @todex/harness-core test --run guardrail.test.ts approval-state-machine.test.ts`
 Expected: PASS. Add tests that `npm test; curl ...`, `.env`, duplicate approval clicks, and a new Run after run-scope approval are all rejected or re-approved as specified.
 
-- [ ] **Step 5: Commit and record**
+- [x] **Step 5: Commit and record**
 
 Run: `git add packages/harness-core/src/guardrail.ts packages/harness-core/src/approval-store.ts packages/harness-core/src/run-state-machine.ts packages/harness-core/test`
 Run: `git commit -m "feat: add governance and HITL state machine"`
+
+实际提交：`430b77a`（初始实现）、`0ec7b07`（禁止不安全 command_prefix）、`0bc5767`（Windows 大小写敏感路径绕过）、`d721397`（PowerShell 编码参数别名）、`4773476`（PowerShell 可执行路径）及后续 Codex 复核修复。最终独立复验记录见 [T-004 验证](verification/2026-07-14-t-004-governance.md)。
 
 ### Task 5: T-005 实现文件工具、trace 脱敏与轻量记忆
 

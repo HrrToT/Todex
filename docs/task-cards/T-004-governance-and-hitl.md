@@ -1,6 +1,6 @@
 # T-004: Governance, Workspace Boundary, and HITL
 
-Status: ready
+Status: verified
 Responsible model: GLM
 Lead review: Codex
 Branch: `feat/t-004-governance`
@@ -67,3 +67,10 @@ Hard-deny: workspace escape including symlink escape; sensitive paths `.env`/`.e
 4. Add exact assertions for these cases: escape and sensitive path deny with Dispatcher 0; safe read allow; free shell awaits approval with Dispatcher 0; duplicate once approval dispatches once; run approval does not leak to new run; `npm test; curl x` is deny despite prior prefix grant; cancellation/expiry dispatches zero; denial produces rejected ToolResult for next LLM turn.
 5. Run the focused command, then `pnpm.cmd test --run`, `pnpm.cmd typecheck`, `pnpm.cmd lint`, and `pnpm.cmd build`.
 6. Commit `feat: add governance and HITL state machine` and report red/green output, changed files, assumptions, commit hash, and self-review. Do not start T-005.
+
+## Completion evidence
+
+- Implementation and GLM repair commits: `430b77a`, `0ec7b07`, `0bc5767`, `d721397`, `4773476`.
+- Codex independently reproduced and closed one final P1: `powershell "-e" <payload>` previously downgraded to `require_approval`; PowerShell strips that argument quoting before parsing it as the encoded-command alias. The regression test now requires hard deny.
+- Final independent commands: `pnpm.cmd test --run` (153/153), `pnpm.cmd typecheck`, `pnpm.cmd lint`, and `pnpm.cmd build`, all exit 0.
+- Review conclusion: no remaining P0/P1 found within the frozen T-004 scope. Real shell/filesystem/network execution remains explicitly out of scope.
