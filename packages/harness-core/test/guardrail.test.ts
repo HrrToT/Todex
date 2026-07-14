@@ -359,6 +359,62 @@ describe("Guardrail shell classification", () => {
     expect(decision).toMatchObject({ decision: "deny", reason: "complex_shell" });
   });
 
+  it("denies powershell -enc encoded alias", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(
+      runShell("powershell -enc SQBFAFgA"),
+      makeContext(),
+    );
+    expect(decision).toMatchObject({ decision: "deny", reason: "complex_shell" });
+  });
+
+  it("denies powershell -e encoded alias", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(
+      runShell("powershell -e SQBFAFgA"),
+      makeContext(),
+    );
+    expect(decision).toMatchObject({ decision: "deny", reason: "complex_shell" });
+  });
+
+  it("denies pwsh -enc encoded alias", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(
+      runShell("pwsh -enc SQBFAFgA"),
+      makeContext(),
+    );
+    expect(decision).toMatchObject({ decision: "deny", reason: "complex_shell" });
+  });
+
+  it("denies powershell -ExecutionPolicy Bypass", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(
+      runShell("powershell -ExecutionPolicy Bypass -File script.ps1"),
+      makeContext(),
+    );
+    expect(decision.decision).toBe("deny");
+    if (decision.decision === "deny") {
+      expect(["complex_shell", "privilege_or_system_command"]).toContain(
+        decision.reason,
+      );
+    }
+  });
+
+  it("does not deny npm test as obfuscated powershell", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(runShell("npm test"), makeContext());
+    expect(decision.decision).toBe("require_approval");
+  });
+
+  it("does not deny node -e eval as powershell obfuscation", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(
+      runShell('node -e "console.log(1)"'),
+      makeContext(),
+    );
+    expect(decision.decision).toBe("require_approval");
+  });
+
   it("classifies npm install as dependency_install", () => {
     const { guardrail } = makeGuardrail();
     const decision = guardrail.evaluate(runShell("npm install"), makeContext());

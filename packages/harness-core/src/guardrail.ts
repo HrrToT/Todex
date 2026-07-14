@@ -16,6 +16,10 @@ const ENCODED_POWERSHELL_PATTERN = /-EncodedCommand|Invoke-Expression|\biex\b/i;
 const ELEVATION_PATTERN = /\bsudo\b|\brunas\b/i;
 const SYSTEM_CONFIG_PATTERN = /\breg\s+(add|delete|import)\b|Set-ItemProperty|system32/i;
 
+const POWERSHELL_EXECUTABLES = new Set(["powershell", "pwsh"]);
+const POWERSHELL_ENCODED_FLAGS = new Set(["-encodedcommand", "-enc", "-e"]);
+const POWERSHELL_POLICY_FLAGS = new Set(["-executionpolicy", "-ep"]);
+
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function computeActionFingerprint(action: Action, projectId: string): string {
@@ -103,6 +107,19 @@ interface ShellClassification {
   readonly riskReasons: string[];
 }
 
+function detectPowerShellObfuscation(command: string): string | undefined {
+  const tokens = command.trim().split(/\s+/);
+  const executable = (tokens[0] ?? "").toLowerCase().replace(/\.exe$/, "");
+  if (!POWERSHELL_EXECUTABLES.has(executable)) return undefined;
+
+  for (let i = 1; i < tokens.length; i++) {
+    const flag = tokens[i].toLowerCase().split(":")[0];
+    if (POWERSHELL_ENCODED_FLAGS.has(flag)) return "complex_shell";
+    if (POWERSHELL_POLICY_FLAGS.has(flag)) return "privilege_or_system_command";
+  }
+  return undefined;
+}
+
 function classifyShellCommand(command: string): ShellClassification {
   const riskReasons: string[] = ["free_shell"];
 
@@ -111,6 +128,10 @@ function classifyShellCommand(command: string): ShellClassification {
   }
   if (ENCODED_POWERSHELL_PATTERN.test(command)) {
     return { decision: "deny", denyReason: "complex_shell", riskReasons };
+  }
+  const powershellReason = detectPowerShellObfuscation(command);
+  if (powershellReason) {
+    return { decision: "deny", denyReason: powershellReason, riskReasons };
   }
   if (ELEVATION_PATTERN.test(command)) {
     return { decision: "deny", denyReason: "privilege_or_system_command", riskReasons };
