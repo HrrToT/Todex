@@ -12,6 +12,9 @@
     }
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "pnpm --filter @todex/contracts build && vitest run"
+  },
+  "dependencies": {
+    "@todex/contracts": "workspace:*"
   }
 }

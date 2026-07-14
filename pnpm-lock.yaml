@@ -45,7 +45,11 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
 
-  packages/harness-core: {}
+  packages/harness-core:
+    dependencies:
+      '@todex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
 packages:
 
