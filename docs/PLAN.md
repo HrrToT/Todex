@@ -233,6 +233,9 @@ Run: `git commit -m "feat: add deterministic agent loop"`
 - Create: `packages/harness-core/src/guardrail.ts`
 - Create: `packages/harness-core/src/approval-store.ts`
 - Create: `packages/harness-core/src/run-state-machine.ts`
+- Modify: `packages/harness-core/src/agent-runner.ts`
+- Modify: `packages/harness-core/src/llm.ts`
+- Modify: `packages/harness-core/src/index.ts`
 - Create: `packages/harness-core/test/guardrail.test.ts`
 - Create: `packages/harness-core/test/approval-state-machine.test.ts`
 
@@ -260,7 +263,7 @@ Expected: FAIL because classifier and approval state machine do not exist.
 
 - [ ] **Step 3: Implement deterministic governance**
 
-Implement canonical workspace resolution, sensitive path deny rules, `allow | require_approval | deny` classification, immutable `ApprovalRequest`, scopes `once | run | command_prefix | deny`, and state transitions `running -> awaiting_approval -> dispatching/running/cancelled`. Persist prefix grants only for safe normalized command fingerprints and set a 7-day expiry.
+Implement canonical workspace resolution, sensitive path deny rules, `allow | require_approval | deny` classification, immutable `ApprovalRequest`, scopes `once | run | command_prefix | deny`, and state transitions `running -> awaiting_approval -> dispatching/running/cancelled`. Integrate GovernanceController into AgentRunner before every Dispatcher call; a hard denial must never dispatch and an approval-required action must suspend and resume only after a valid decision. Persist prefix grants only for safe normalized command fingerprints and set a 7-day expiry. The detailed frozen contract is [T-004 implementation plan](superpowers/plans/2026-07-14-t-004-governance.md) and its GLM task card.
 
 - [ ] **Step 4: Verify green plus bypass cases**
 
