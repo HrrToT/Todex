@@ -415,6 +415,35 @@ describe("Guardrail shell classification", () => {
     expect(decision.decision).toBe("require_approval");
   });
 
+  it("denies unquoted absolute powershell.exe path with -enc", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(
+      runShell(
+        "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -enc SQBFAFgA",
+      ),
+      makeContext(),
+    );
+    expect(decision).toMatchObject({ decision: "deny", reason: "complex_shell" });
+  });
+
+  it("denies quoted spaced pwsh.exe path with -e", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(
+      runShell('"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -e SQBFAFgA'),
+      makeContext(),
+    );
+    expect(decision).toMatchObject({ decision: "deny", reason: "complex_shell" });
+  });
+
+  it("denies powershell.exe with colon-attached -enc: payload", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(
+      runShell("powershell.exe -enc:SQBFAFgA"),
+      makeContext(),
+    );
+    expect(decision).toMatchObject({ decision: "deny", reason: "complex_shell" });
+  });
+
   it("classifies npm install as dependency_install", () => {
     const { guardrail } = makeGuardrail();
     const decision = guardrail.evaluate(runShell("npm install"), makeContext());

@@ -107,13 +107,37 @@ interface ShellClassification {
   readonly riskReasons: string[];
 }
 
-function detectPowerShellObfuscation(command: string): string | undefined {
-  const tokens = command.trim().split(/\s+/);
-  const executable = (tokens[0] ?? "").toLowerCase().replace(/\.exe$/, "");
-  if (!POWERSHELL_EXECUTABLES.has(executable)) return undefined;
+function extractExecutable(command: string): { executable: string; rest: string } {
+  const trimmed = command.trim();
+  if (trimmed.startsWith('"')) {
+    const end = trimmed.indexOf('"', 1);
+    if (end === -1) {
+      return { executable: trimmed.slice(1), rest: "" };
+    }
+    return { executable: trimmed.slice(1, end), rest: trimmed.slice(end + 1) };
+  }
+  const match = trimmed.match(/^(\S+)/);
+  if (!match) {
+    return { executable: "", rest: "" };
+  }
+  return { executable: match[1], rest: trimmed.slice(match[1].length) };
+}
 
-  for (let i = 1; i < tokens.length; i++) {
-    const flag = tokens[i].toLowerCase().split(":")[0];
+function executableBasename(executable: string): string {
+  const normalized = executable.replace(/\\/g, "/");
+  const lastSlash = normalized.lastIndexOf("/");
+  const basename = lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1);
+  return basename.toLowerCase().replace(/\.exe$/, "");
+}
+
+function detectPowerShellObfuscation(command: string): string | undefined {
+  const { executable, rest } = extractExecutable(command);
+  const basename = executableBasename(executable);
+  if (!POWERSHELL_EXECUTABLES.has(basename)) return undefined;
+
+  const tokens = rest.trim().split(/\s+/).filter((s) => s !== "");
+  for (const token of tokens) {
+    const flag = token.toLowerCase().split(":")[0];
     if (POWERSHELL_ENCODED_FLAGS.has(flag)) return "complex_shell";
     if (POWERSHELL_POLICY_FLAGS.has(flag)) return "privilege_or_system_command";
   }
