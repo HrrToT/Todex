@@ -72,7 +72,7 @@ function getRelativePath(canonicalPath: string, workspaceRoot: string): string {
 function isSensitivePath(relativePath: string): boolean {
   const normalized = relativePath.replace(/\\/g, "/");
   const segments = normalized.split("/").filter((s) => s !== "");
-  const basename = segments[segments.length - 1] ?? "";
+  const basename = (segments[segments.length - 1] ?? "").toLowerCase();
 
   if (basename === ".env") return true;
   if (basename.startsWith(".env.") && basename !== ".env.example") return true;
@@ -86,11 +86,12 @@ function isSensitivePath(relativePath: string): boolean {
   if (basename === "id_rsa") return true;
   if (basename === "id_ed25519") return true;
 
-  if (segments.includes(".aws")) return true;
-  if (segments.includes(".ssh")) return true;
+  const lowerSegments = segments.map((s) => s.toLowerCase());
+  if (lowerSegments.includes(".aws")) return true;
+  if (lowerSegments.includes(".ssh")) return true;
 
-  for (let i = 0; i < segments.length - 1; i++) {
-    if (segments[i] === ".git" && segments[i + 1] === "config") return true;
+  for (let i = 0; i < lowerSegments.length - 1; i++) {
+    if (lowerSegments[i] === ".git" && lowerSegments[i + 1] === "config") return true;
   }
 
   return false;

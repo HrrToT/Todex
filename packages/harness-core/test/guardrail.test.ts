@@ -177,6 +177,36 @@ describe("Guardrail path classification", () => {
     expect(decision).toMatchObject({ decision: "allow", reason: "safe_action" });
   });
 
+  it("denies reading .ENV (case-insensitive)", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(readFile(".ENV"), makeContext());
+    expect(decision).toMatchObject({ decision: "deny", reason: "sensitive_path" });
+  });
+
+  it("denies reading CREDENTIALS.JSON (case-insensitive)", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(readFile("CREDENTIALS.JSON"), makeContext());
+    expect(decision).toMatchObject({ decision: "deny", reason: "sensitive_path" });
+  });
+
+  it("denies reading .AWS/credentials (case-insensitive)", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(readFile(".AWS/credentials"), makeContext());
+    expect(decision).toMatchObject({ decision: "deny", reason: "sensitive_path" });
+  });
+
+  it("denies reading .GIT/CONFIG (case-insensitive)", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(readFile(".GIT/CONFIG"), makeContext());
+    expect(decision).toMatchObject({ decision: "deny", reason: "sensitive_path" });
+  });
+
+  it("allows reading .ENV.EXAMPLE (case-insensitive allowlist)", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(readFile(".ENV.EXAMPLE"), makeContext());
+    expect(decision).toMatchObject({ decision: "allow", reason: "safe_action" });
+  });
+
   it("denies reading .git/config", () => {
     const { guardrail } = makeGuardrail();
     const decision = guardrail.evaluate(readFile(".git/config"), makeContext());
