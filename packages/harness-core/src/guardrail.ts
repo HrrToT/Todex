@@ -35,7 +35,7 @@ export function computeActionFingerprint(action: Action, projectId: string): str
   }
 }
 
-function normalizePath(p: string): string {
+export function normalizePath(p: string): string {
   p = p.replace(/\\/g, "/");
   const isAbsolute = p.startsWith("/") || /^[A-Za-z]:/.test(p);
   const parts = p.split("/");
@@ -59,12 +59,12 @@ function normalizePath(p: string): string {
   return body;
 }
 
-function isWithinWorkspace(canonicalPath: string, workspaceRoot: string): boolean {
+export function isWithinWorkspace(canonicalPath: string, workspaceRoot: string): boolean {
   const root = normalizePath(workspaceRoot);
   return canonicalPath === root || canonicalPath.startsWith(root + "/");
 }
 
-function getRelativePath(canonicalPath: string, workspaceRoot: string): string {
+export function getRelativePath(canonicalPath: string, workspaceRoot: string): string {
   const root = normalizePath(workspaceRoot);
   if (canonicalPath === root) return ".";
   if (canonicalPath.startsWith(root + "/")) {
@@ -73,7 +73,7 @@ function getRelativePath(canonicalPath: string, workspaceRoot: string): string {
   return canonicalPath;
 }
 
-function isSensitivePath(relativePath: string): boolean {
+export function isSensitivePath(relativePath: string): boolean {
   const normalized = relativePath.replace(/\\/g, "/");
   const segments = normalized.split("/").filter((s) => s !== "");
   const basename = (segments[segments.length - 1] ?? "").toLowerCase();

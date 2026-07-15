@@ -27,3 +27,11 @@ export { InMemoryApprovalStore } from "./approval-store.js";
 export type { InMemoryApprovalStoreOptions } from "./approval-store.js";
 export { RunStateMachine } from "./run-state-machine.js";
 export type { RunState, RunTransition } from "./run-state-machine.js";
+export { FileTools } from "./file-tools.js";
+export type { WorkspaceFs, SearchMatch, PatchMetadata, FileToolsDeps } from "./file-tools.js";
+export {
+  normalizePath,
+  isWithinWorkspace,
+  getRelativePath,
+  isSensitivePath,
+} from "./guardrail.js";
