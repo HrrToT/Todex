@@ -4,10 +4,14 @@ import {
   ScriptedMockLlm,
   Guardrail,
   InMemoryApprovalStore,
+  FileTools,
+  inspectUnifiedDiff,
   type AgentRunner,
   type LlmTurnContext,
   type ToolDispatcher,
   type Clock,
+  type WorkspaceFs,
+  type SearchMatch,
 } from "../src/index.js";
 import type { PathResolver } from "../src/guardrail.js";
 import type { Action } from "@todex/contracts";
@@ -425,5 +429,178 @@ describe("AgentRunner dispatcher errors", () => {
       "action_requested",
       "run_completed",
     ]);
+  });
+});
+
+class InMemoryWorkspaceFs implements WorkspaceFs {
+  private files = new Map<string, string>();
+
+  setFile(path: string, content: string): void {
+    this.files.set(this.normalize(path), content);
+  }
+
+  getFile(path: string): string | undefined {
+    return this.files.get(this.normalize(path));
+  }
+
+  async list(path: string, maxDepth: number): Promise<readonly string[]> {
+    const prefix = this.normalize(path);
+    const result: string[] = [];
+    for (const filePath of this.files.keys()) {
+      if (filePath === prefix) continue;
+      let relative: string;
+      if (prefix === ".") {
+        relative = filePath;
+      } else if (filePath.startsWith(prefix + "/")) {
+        relative = filePath.slice(prefix.length + 1);
+      } else {
+        continue;
+      }
+      const depth = relative.includes("/") ? relative.split("/").length - 1 : 0;
+      if (depth <= maxDepth) {
+        result.push(filePath);
+      }
+    }
+    result.sort();
+    return result;
+  }
+
+  async readText(path: string): Promise<string> {
+    const content = this.files.get(this.normalize(path));
+    if (content === undefined) {
+      throw new Error(`file not found: ${path}`);
+    }
+    return content;
+  }
+
+  async searchText(path: string, query: string): Promise<readonly SearchMatch[]> {
+    const prefix = this.normalize(path);
+    const matches: SearchMatch[] = [];
+    for (const [filePath, content] of this.files) {
+      if (prefix === "." || filePath === prefix || filePath.startsWith(prefix + "/")) {
+        const lines = content.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes(query)) {
+            matches.push({ path: filePath, line: i + 1, context: lines[i] });
+          }
+        }
+      }
+    }
+    return matches;
+  }
+
+  async snapshot(paths: readonly string[]): Promise<ReadonlyMap<string, string | undefined>> {
+    const result = new Map<string, string | undefined>();
+    for (const p of paths) {
+      result.set(p, this.files.get(this.normalize(p)));
+    }
+    return result;
+  }
+
+  async commit(next: ReadonlyMap<string, string | undefined>): Promise<void> {
+    for (const [path, content] of next) {
+      if (content === undefined) {
+        this.files.delete(this.normalize(path));
+      } else {
+        this.files.set(this.normalize(path), content);
+      }
+    }
+  }
+
+  private normalize(p: string): string {
+    return p.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
+  }
+}
+
+function makePatchOfByteLength(byteLength: number): string {
+  const header = "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-x\n+y";
+  const padding = "z".repeat(Math.max(0, byteLength - header.length - 1));
+  return header + padding + "\n";
+}
+
+function makeRunnerWithFileTools(workspaceRoot = "/workspace") {
+  const fs = new InMemoryWorkspaceFs();
+  const pathResolver = new FakePathResolver();
+  const fileTools = new FileTools({ workspaceRoot, fs, pathResolver });
+  const clock = new FakeClock();
+  const store = new InMemoryApprovalStore({
+    clock,
+    idFactory: createMonotonicIdFactory(),
+  });
+  const guardrail = new Guardrail({
+    pathResolver,
+    approvalStore: store,
+    clock,
+    approvalIdFactory: createMonotonicIdFactory(),
+    inspectPatch: inspectUnifiedDiff,
+  });
+  const calls: { action: Action; actionId: string }[] = [];
+  const dispatcher: ToolDispatcher = {
+    dispatch: async (action, ctx) => {
+      calls.push({ action, actionId: ctx.actionId });
+      return fileTools.dispatch(action, ctx);
+    },
+  };
+  return {
+    clock,
+    resolver: pathResolver,
+    store,
+    guardrail,
+    dispatcher,
+    fs,
+    fileTools,
+    calls,
+    createRunner: (llm: ScriptedMockLlm) =>
+      createRunner({
+        llm,
+        dispatcher,
+        governance: guardrail,
+        approvalStore: store,
+        clock,
+      }),
+  };
+}
+
+describe("AgentRunner patch approval", () => {
+  it("pauses an 8193-byte patch before dispatch", async () => {
+    const patch = makePatchOfByteLength(8193);
+    expect(Buffer.byteLength(patch, "utf8")).toBe(8193);
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch },
+    ]);
+    const { calls, createRunner: make } = makeRunnerWithFileTools();
+    const runner = make(llm);
+
+    const result = await runner.run({
+      runId: "r-patch-approval",
+      projectId: "p1",
+      task: "apply large patch",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("awaiting_approval");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("dispatches an 8192-byte patch without approval", async () => {
+    const patch = makePatchOfByteLength(8192);
+    expect(Buffer.byteLength(patch, "utf8")).toBe(8192);
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch },
+      { tool: "finish", summary: "done" },
+    ]);
+    const { calls, createRunner: make } = makeRunnerWithFileTools();
+    const runner = make(llm);
+
+    const result = await runner.run({
+      runId: "r-patch-auto",
+      projectId: "p1",
+      task: "apply small patch",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].action.tool).toBe("apply_patch");
   });
 });

@@ -350,3 +350,89 @@ describe("FileTools unsupported tools", () => {
     expect(result).toMatchObject({ status: "skipped", summary: "unsupported_file_tool" });
   });
 });
+
+describe("FileTools unified diff patches", () => {
+  it("applies a valid single-file diff", async () => {
+    const { tools, fs } = makeTools({ "src/a.ts": "line1\nline2\nline3\n" });
+    const patch = "--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,3 +1,3 @@\n line1\n-line2\n+line2modified\n line3\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result.status).toBe("succeeded");
+    expect(fs.getFile("src/a.ts")).toBe("line1\nline2modified\nline3\n");
+  });
+
+  it("returns patch_invalid for malformed diff", async () => {
+    const { tools } = makeTools({ "src/a.ts": "line1\n" });
+    const result = await tools.dispatch({ tool: "apply_patch", patch: "not a diff" }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_invalid" });
+  });
+
+  it("returns patch_invalid for diff without hunk headers", async () => {
+    const { tools } = makeTools({ "src/a.ts": "line1\n" });
+    const result = await tools.dispatch(
+      { tool: "apply_patch", patch: "--- a/src/a.ts\n+++ b/src/a.ts\n" },
+      ctx,
+    );
+    expect(result).toMatchObject({ status: "failed", summary: "patch_invalid" });
+  });
+
+  it("applies a multi-file patch atomically", async () => {
+    const { tools, fs } = makeTools({ "a.ts": "before-a\n", "b.ts": "before-b\n" });
+    const patch =
+      "--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-before-a\n+after-a\n" +
+      "--- a/b.ts\n+++ b/b.ts\n@@ -1 +1 @@\n-before-b\n+after-b\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result.status).toBe("succeeded");
+    expect(fs.getFile("a.ts")).toBe("after-a\n");
+    expect(fs.getFile("b.ts")).toBe("after-b\n");
+  });
+
+  it("does not partially apply a conflicting multi-file patch", async () => {
+    const { tools, fs } = makeTools({ "a.ts": "before-a\n", "b.ts": "before-b\n" });
+    const patch =
+      "--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-before-a\n+after-a\n" +
+      "--- a/b.ts\n+++ b/b.ts\n@@ -1 +1 @@\n-wrong-content\n+after-b\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result.summary).toBe("patch_conflict");
+    expect(fs.getFile("a.ts")).toBe("before-a\n");
+    expect(fs.getFile("b.ts")).toBe("before-b\n");
+  });
+
+  it("returns patch_conflict for a single-file context mismatch", async () => {
+    const { tools, fs } = makeTools({ "src/a.ts": "line1\nline2\nline3\n" });
+    const patch =
+      "--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,3 +1,3 @@\n line1\n-wrong\n+line2modified\n line3\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_conflict" });
+    expect(fs.getFile("src/a.ts")).toBe("line1\nline2\nline3\n");
+  });
+
+  it("rejects a patch targeting a sensitive file", async () => {
+    const { tools } = makeTools({ ".env": "TOKEN=abc\n" });
+    const patch = "--- a/.env\n+++ b/.env\n@@ -1 +1 @@\n-TOKEN=abc\n+TOKEN=xyz\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "rejected", summary: "denied: sensitive_path" });
+  });
+
+  it("rejects a patch with workspace-escaping target", async () => {
+    const { tools } = makeTools();
+    const patch = "--- a/../outside\n+++ b/../outside\n@@ -1 +1 @@\n-old\n+new\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "rejected", summary: "denied: workspace_escape" });
+  });
+
+  it("does not expose seeded secret in patch rejection", async () => {
+    const { tools } = makeTools({ ".env": "TOKEN=secret-value\n" });
+    const patch = "--- a/.env\n+++ b/.env\n@@ -1 +1 @@\n-TOKEN=secret-value\n+TOKEN=new\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result.status).toBe("rejected");
+    expect(result.summary).not.toContain("secret-value");
+  });
+
+  it("creates a new file from /dev/null old path", async () => {
+    const { tools, fs } = makeTools();
+    const patch = "--- /dev/null\n+++ b/new-file.ts\n@@ -0,0 +1 @@\n+new content\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result.status).toBe("succeeded");
+    expect(fs.getFile("new-file.ts")).toBe("new content\n");
+  });
+});

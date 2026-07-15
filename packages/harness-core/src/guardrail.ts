@@ -1,4 +1,5 @@
 import type { Action, ApprovalRequest } from "@todex/contracts";
+import type { PatchMetadata } from "./file-tools.js";
 import type {
   Clock,
   GovernanceContext,
@@ -190,6 +191,22 @@ interface PathCheckResult {
   readonly denyReason?: string;
 }
 
+export function checkPath(
+  workspaceRoot: string,
+  path: string,
+  resolver: PathResolver,
+): { decision: "allow" | "deny"; denyReason?: string } {
+  const canonical = resolver.resolveCanonical(workspaceRoot, path);
+  if (!isWithinWorkspace(canonical, workspaceRoot)) {
+    return { decision: "deny", denyReason: "workspace_escape" };
+  }
+  const relative = getRelativePath(canonical, workspaceRoot);
+  if (isSensitivePath(relative)) {
+    return { decision: "deny", denyReason: "sensitive_path" };
+  }
+  return { decision: "allow" };
+}
+
 function checkActionPath(
   action: Action,
   workspaceRoot: string,
@@ -218,17 +235,7 @@ function checkActionPath(
     return { decision: "allow" };
   }
 
-  const canonical = resolver.resolveCanonical(workspaceRoot, pathToCheck);
-  if (!isWithinWorkspace(canonical, workspaceRoot)) {
-    return { decision: "deny", denyReason: "workspace_escape" };
-  }
-
-  const relative = getRelativePath(canonical, workspaceRoot);
-  if (isSensitivePath(relative)) {
-    return { decision: "deny", denyReason: "sensitive_path" };
-  }
-
-  return { decision: "allow" };
+  return checkPath(workspaceRoot, pathToCheck, resolver);
 }
 
 export interface GuardrailDeps {
@@ -236,6 +243,7 @@ export interface GuardrailDeps {
   readonly approvalStore: ApprovalStore;
   readonly clock: Clock;
   readonly approvalIdFactory: () => string;
+  readonly inspectPatch?: (patch: string) => PatchMetadata | undefined;
 }
 
 export class Guardrail implements GovernanceController {
@@ -243,12 +251,14 @@ export class Guardrail implements GovernanceController {
   private readonly approvalStore: ApprovalStore;
   private readonly clock: Clock;
   private readonly approvalIdFactory: () => string;
+  private readonly inspectPatch?: (patch: string) => PatchMetadata | undefined;
 
   constructor(deps: GuardrailDeps) {
     this.pathResolver = deps.pathResolver;
     this.approvalStore = deps.approvalStore;
     this.clock = deps.clock;
     this.approvalIdFactory = deps.approvalIdFactory;
+    this.inspectPatch = deps.inspectPatch;
   }
 
   evaluate(action: Action, context: GovernanceContext): GovernanceDecision {
@@ -315,7 +325,26 @@ export class Guardrail implements GovernanceController {
         return { decision: "require_approval", riskReasons: shellResult.riskReasons };
       }
 
-      case "apply_patch":
+      case "apply_patch": {
+        if (!this.inspectPatch) {
+          return { decision: "allow" };
+        }
+        const metadata = this.inspectPatch(action.patch);
+        if (metadata === undefined) {
+          return { decision: "allow" };
+        }
+        for (const target of metadata.affectedPaths) {
+          const pathCheck = checkPath(workspaceRoot, target, this.pathResolver);
+          if (pathCheck.decision === "deny") {
+            return { decision: "deny", denyReason: pathCheck.denyReason! };
+          }
+        }
+        if (metadata.byteLength > 8192 || metadata.affectedPaths.length > 10) {
+          return { decision: "require_approval", riskReasons: ["large_patch"] };
+        }
+        return { decision: "allow" };
+      }
+
       case "remember":
       case "finish":
       case "run_configured_command":

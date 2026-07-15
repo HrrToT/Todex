@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Action, ApprovalRequest } from "@todex/contracts";
 import { Guardrail, type PathResolver } from "../src/guardrail.js";
 import { InMemoryApprovalStore } from "../src/approval-store.js";
+import { inspectUnifiedDiff } from "../src/file-tools.js";
+import type { PatchMetadata } from "../src/file-tools.js";
 import type { Clock, GovernanceContext } from "../src/llm.js";
 
 class FakeClock implements Clock {
@@ -82,6 +84,7 @@ function makeGuardrail(
   resolver?: FakePathResolver,
   clock?: FakeClock,
   store?: InMemoryApprovalStore,
+  inspectPatch?: (patch: string) => PatchMetadata | undefined,
 ): { guardrail: Guardrail; resolver: FakePathResolver; clock: FakeClock; store: InMemoryApprovalStore } {
   const r = resolver ?? new FakePathResolver();
   const c = clock ?? new FakeClock();
@@ -96,6 +99,7 @@ function makeGuardrail(
     approvalStore: s,
     clock: c,
     approvalIdFactory: createMonotonicIdFactory(),
+    ...(inspectPatch ? { inspectPatch } : {}),
   });
   return { guardrail, resolver: r, clock: c, store: s };
 }
@@ -643,5 +647,78 @@ describe("Guardrail grant matching", () => {
 
     const decision = guardrail.evaluate(readFile("../.ssh/id_rsa"), ctx);
     expect(decision).toMatchObject({ decision: "deny", reason: "workspace_escape" });
+  });
+});
+
+function makePatchOfByteLength(byteLength: number): string {
+  const header = "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-x\n+y";
+  const padding = "z".repeat(Math.max(0, byteLength - header.length - 1));
+  return header + padding + "\n";
+}
+
+function makeMultiFilePatch(fileCount: number): string {
+  let patch = "";
+  for (let i = 0; i < fileCount; i++) {
+    patch += `--- a/f${i}\n+++ b/f${i}\n@@ -1 +1 @@\n-old${i}\n+new${i}\n`;
+  }
+  return patch;
+}
+
+describe("Guardrail patch classification", () => {
+  it("allows a patch at exactly 8192 bytes", () => {
+    const patch = makePatchOfByteLength(8192);
+    expect(Buffer.byteLength(patch, "utf8")).toBe(8192);
+    const { guardrail } = makeGuardrail(undefined, undefined, undefined, inspectUnifiedDiff);
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision).toMatchObject({ decision: "allow", reason: "safe_action" });
+  });
+
+  it("requires approval for a patch over 8192 bytes", () => {
+    const patch = makePatchOfByteLength(8193);
+    expect(Buffer.byteLength(patch, "utf8")).toBe(8193);
+    const { guardrail } = makeGuardrail(undefined, undefined, undefined, inspectUnifiedDiff);
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision.decision).toBe("require_approval");
+  });
+
+  it("allows a patch touching exactly 10 files", () => {
+    const patch = makeMultiFilePatch(10);
+    const { guardrail } = makeGuardrail(undefined, undefined, undefined, inspectUnifiedDiff);
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision).toMatchObject({ decision: "allow", reason: "safe_action" });
+  });
+
+  it("requires approval for a patch touching more than 10 files", () => {
+    const patch = makeMultiFilePatch(11);
+    const { guardrail } = makeGuardrail(undefined, undefined, undefined, inspectUnifiedDiff);
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision.decision).toBe("require_approval");
+  });
+
+  it("denies a patch targeting a sensitive file", () => {
+    const patch = "--- a/.env\n+++ b/.env\n@@ -1 +1 @@\n-old\n+new\n";
+    const { guardrail } = makeGuardrail(undefined, undefined, undefined, inspectUnifiedDiff);
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision).toMatchObject({ decision: "deny", reason: "sensitive_path" });
+  });
+
+  it("denies a patch with workspace-escaping target", () => {
+    const patch = "--- a/../outside\n+++ b/../outside\n@@ -1 +1 @@\n-old\n+new\n";
+    const { guardrail } = makeGuardrail(undefined, undefined, undefined, inspectUnifiedDiff);
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision).toMatchObject({ decision: "deny", reason: "workspace_escape" });
+  });
+
+  it("allows a malformed diff to reach FileTools for patch_invalid", () => {
+    const { guardrail } = makeGuardrail(undefined, undefined, undefined, inspectUnifiedDiff);
+    const decision = guardrail.evaluate(applyPatch("not a diff"), makeContext());
+    expect(decision).toMatchObject({ decision: "allow", reason: "safe_action" });
+  });
+
+  it("hard deny takes precedence over large patch approval", () => {
+    const patch = "--- a/.env\n+++ b/.env\n" + "@@ -1 +1 @@\n-" + "x".repeat(9000) + "\n+y\n";
+    const { guardrail } = makeGuardrail(undefined, undefined, undefined, inspectUnifiedDiff);
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision).toMatchObject({ decision: "deny", reason: "sensitive_path" });
   });
 });
