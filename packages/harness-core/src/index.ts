@@ -36,3 +36,7 @@ export {
   isSensitivePath,
   checkPath,
 } from "./guardrail.js";
+export { MemoryStore, InMemoryMemoryRepository, isSensitiveContent } from "./memory-store.js";
+export type { MemoryRepository, MemoryStoreDeps } from "./memory-store.js";
+export { ContextBuilder, EMPTY_MEMORY_CONTEXT } from "./context-builder.js";
+export type { SelectedMemoryContext, ContextBuilderDeps, SelectionReason } from "./context-builder.js";
