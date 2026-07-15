@@ -282,6 +282,8 @@ Run: `git commit -m "feat: add governance and HITL state machine"`
 **依赖：** T-003、T-004。
 **建议责任：** Qwen，可独立完成。
 
+冻结设计与逐步实施计划：[T-005 设计](superpowers/specs/2026-07-15-t-005-file-tools-memory-design.md)、[T-005 实施计划](superpowers/plans/2026-07-15-t-005-file-tools-memory.md)、[Qwen 任务卡](task-cards/T-005-file-tools-and-memory.md)。SQLite 的真实持久化、应用数据目录和 Electron 原生模块打包保留给 T-009；T-005 只实现可注入的记忆仓储边界与确定性 fake。
+
 **Files:**
 - Create: `packages/harness-core/src/file-tools.ts`
 - Create: `packages/harness-core/src/memory-store.ts`
