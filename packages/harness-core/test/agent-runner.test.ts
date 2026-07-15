@@ -6,6 +6,9 @@ import {
   InMemoryApprovalStore,
   FileTools,
   inspectUnifiedDiff,
+  ContextBuilder,
+  InMemoryMemoryRepository,
+  MemoryStore,
   type AgentRunner,
   type LlmTurnContext,
   type ToolDispatcher,
@@ -602,5 +605,145 @@ describe("AgentRunner patch approval", () => {
     expect(result.status).toBe("completed");
     expect(calls).toHaveLength(1);
     expect(calls[0].action.tool).toBe("apply_patch");
+  });
+});
+
+function makeRunnerWithMemory(workspaceRoot = "/workspace") {
+  const gov = makeGovernance(workspaceRoot);
+  const dispatcher = fakeDispatcher();
+  const repository = new InMemoryMemoryRepository();
+  const memoryStore = new MemoryStore({
+    repository,
+    clock: gov.clock,
+    memoryIdFactory: createMonotonicIdFactory(),
+  });
+  const contextBuilder = new ContextBuilder({ repository });
+  return {
+    ...gov,
+    dispatcher,
+    repository,
+    memoryStore,
+    contextBuilder,
+    createRunner: (llm: ScriptedMockLlm) =>
+      createRunner({
+        llm,
+        dispatcher,
+        governance: gov.guardrail,
+        approvalStore: gov.store,
+        clock: gov.clock,
+        contextBuilder,
+      }),
+  };
+}
+
+describe("AgentRunner memory context", () => {
+  it("passes project-scoped memory to the LLM", async () => {
+    const { memoryStore, createRunner: make } = makeRunnerWithMemory();
+    memoryStore.remember({
+      projectId: "p1",
+      kind: "project_profile",
+      trustLevel: "verified",
+      content: "p1 profile",
+      sourceTraceIds: [],
+    });
+    const llm = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-mem",
+      projectId: "p1",
+      task: "memory test",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm.contexts[0].memory?.entries).toHaveLength(1);
+    expect(llm.contexts[0].memory?.entries[0].content).toBe("p1 profile");
+  });
+
+  it("provides empty memory context when no builder is configured", async () => {
+    const llm = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const { createRunner: make } = makeRunner();
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-no-mem",
+      projectId: "p1",
+      task: "no memory",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm.contexts[0].memory?.entries).toHaveLength(0);
+    expect(llm.contexts[0].memory?.totalCharacters).toBe(0);
+  });
+
+  it("snapshots memory per turn so later mutations do not leak back", async () => {
+    const { memoryStore, createRunner: make } = makeRunnerWithMemory();
+    const llm = new ScriptedMockLlm(
+      [
+        { tool: "read_file", path: "src/a.ts" },
+        { tool: "finish", summary: "done" },
+      ],
+      {
+        onTurn: (ctx) => {
+          if (ctx.trace.length === 0) {
+            memoryStore.remember({
+              projectId: "p1",
+              kind: "project_profile",
+              trustLevel: "verified",
+              content: "added during run",
+              sourceTraceIds: [],
+            });
+          }
+        },
+      },
+    );
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-mem-snapshot",
+      projectId: "p1",
+      task: "snapshot test",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm.contexts[0].memory?.entries).toHaveLength(0);
+    expect(llm.contexts[1].memory?.entries).toHaveLength(1);
+    expect(llm.contexts[1].memory?.entries[0].content).toBe("added during run");
+  });
+
+  it("isolates memory by project in the LLM context", async () => {
+    const { memoryStore, createRunner: make } = makeRunnerWithMemory();
+    memoryStore.remember({
+      projectId: "p1",
+      kind: "project_profile",
+      trustLevel: "verified",
+      content: "p1 profile",
+      sourceTraceIds: [],
+    });
+    memoryStore.remember({
+      projectId: "p2",
+      kind: "project_profile",
+      trustLevel: "verified",
+      content: "p2 profile",
+      sourceTraceIds: [],
+    });
+    const llm = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-mem-iso",
+      projectId: "p1",
+      task: "isolation test",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm.contexts[0].memory?.entries).toHaveLength(1);
+    expect(llm.contexts[0].memory?.entries[0].content).toBe("p1 profile");
   });
 });
