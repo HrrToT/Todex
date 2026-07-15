@@ -1,6 +1,6 @@
 # T-005: Bounded File Tools and Project Memory
 
-Status: ready
+Status: done
 Responsible model: Qwen
 Lead review: Codex
 Branch: `feat/t-005-file-tools-memory`
