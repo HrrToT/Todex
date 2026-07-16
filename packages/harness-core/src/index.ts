@@ -41,3 +41,12 @@ export { MemoryStore, InMemoryMemoryRepository, isSensitiveContent } from "./mem
 export type { MemoryRepository, MemoryStoreDeps } from "./memory-store.js";
 export { ContextBuilder, EMPTY_MEMORY_CONTEXT } from "./context-builder.js";
 export type { SelectedMemoryContext, ContextBuilderDeps, SelectionReason } from "./context-builder.js";
+export { VerificationRunner } from "./verification-runner.js";
+export type {
+  CommandExecution,
+  CommandExecutionCondition,
+  CommandRunner,
+  ConfiguredCommandRegistry,
+  VerificationFeedback,
+  VerificationRunnerDeps,
+} from "./verification-runner.js";
