@@ -137,7 +137,7 @@ The `it.each` test proves `quality_failure` and `build_failure` are repairable:
 | `quality_failure` | `quality_failure` | `passed` | `completed` |
 | `build_failure` | `build_failure` | `passed` | `completed` |
 
-## Full repository verification output summary
+## Initial implementation verification output summary
 
 ```
 pnpm.cmd test --run     → 306/306 passed (10 test files)
@@ -160,7 +160,9 @@ Test file breakdown:
 - `verification-runner.test.ts`: 22 tests
 - `repair-loop.test.ts`: 15 tests
 
-## Assumptions and controlled exceptions
+## Initial assumptions and controlled exceptions
+
+The following items describe the initial implementation report. The final review closure below supersedes the state-machine proxy and shallow-feedback assumptions after commits `bea859a` and `cf11eed`.
 
 1. **State machine proxy for terminal states**: `RunStateMachine` (T-004) does not include `failed_repair_limit` or `failed_environment` in its `RunState` type. The `AgentRunner` transitions the state machine to `"failed"` as a proxy and reports the specific `RunStatus` (`failed_repair_limit` or `failed_environment`) in the `RunResult`. This is within the allowed files boundary (only `agent-runner.ts` was modified, not `run-state-machine.ts`).
 
@@ -177,3 +179,38 @@ Test file breakdown:
 ## T-007 and T-009 deferral
 
 T-006 consumes only injected `ConfiguredCommand` objects. Project detection (proposing candidate commands) is T-007. SQLite persistence of confirmed commands is T-009. No real Node `child_process`, no `better-sqlite3`, no Electron, and no network call was introduced.
+
+## Final Review, Rework, and Integration Closure
+
+The initial implementation evidence above recorded 306 passing tests. It was not treated as merge approval. Codex then performed specification-compliance review followed by code-quality/security review against the approved T-006 design and task card.
+
+| Finding | Required correction | Final commit and evidence |
+| --- | --- | --- |
+| A registry could return a confirmed command for a different project or command ID. | Revalidate `projectId`, `commandId`, and `confirmedByUser` at the `VerificationRunner` execution boundary; do not call `CommandRunner` on mismatch. | `bea859a`; deliberately lying registry tests are red before and green after. |
+| A thrown or rejected `CommandRunner` escaped the Harness. | Convert it to bounded, redacted `execution_error`, emit verification/failure trace, and end `failed_environment`. | `bea859a`; throw, rejected promise, and non-Error throw tests pass. |
+| Unix absolute paths after punctuation could bypass feedback redaction. | Redact paths after common stack-trace punctuation without matching relative paths. | `bea859a`; parenthesis, quote, equals, and bracket cases pass with trace/context assertions. |
+| Verification feedback was shared or mutable across LLM turns. | Make stored feedback and every per-turn context snapshot runtime immutable. | `bea859a` and `cf11eed`; outer feedback and `relatedPaths` are frozen and mutation throws `TypeError`. |
+| State machine represented two precise terminal statuses as generic `failed`. | Add `failed_repair_limit` and `failed_environment` as terminal state-machine states. | `bea859a`; transition and terminality tests pass. |
+
+### Final Independent Verification
+
+Codex independently ran the following in the reviewed worktree after `cf11eed`:
+
+```text
+pnpm.cmd test --run   -> 327/327 passed (10 test files)
+pnpm.cmd typecheck    -> exit 0
+pnpm.cmd lint         -> exit 0
+pnpm.cmd build        -> exit 0
+git diff --check      -> exit 0
+git status --short    -> clean
+```
+
+### GitHub Integration
+
+- Branch: `feat/t-006-verification-feedback`.
+- Pull request: [#5](https://github.com/HrrToT/Todex/pull/5).
+- GitHub Actions `ci`: passed in 26 seconds.
+- Merge authorization was obtained after CI passed.
+- Merge commit: `adc33c3fcc188a3438669a55541aa3164644b025` on `main`.
+
+T-006 is complete. Its runtime boundary remains injected-only: no real shell/process, network, Electron, SQLite, persistence adapter, project detector, or model-provider integration is part of this task.

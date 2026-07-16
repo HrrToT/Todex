@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 状态：approved for cold-start validation
-最后更新：2026-07-13
+最后更新：2026-07-17
 
 **Goal:** 构建可在 Windows 本地仓库中运行的 Todex V1.0：自研 coding-agent Harness、Node/Python 支持、治理/HITL、反馈修复、Electron 桌面端和公网 Mock Demo。
 
@@ -332,7 +332,7 @@ Run: `git commit -m "feat: add bounded file tools and project memory"`
 **建议责任：** DeepSeek，可独立完成。
 
 冻结设计与逐步实施计划：[T-006 设计](superpowers/specs/2026-07-16-t-006-verification-feedback-design.md)、[T-006 实施计划](superpowers/plans/2026-07-16-t-006-verification-feedback.md)、[DeepSeek 任务卡](task-cards/T-006-verification-feedback-and-repair.md)。T-006 只使用注入式 CommandRunner 和已确认的固定 commandId；真实进程执行、项目探测、SQLite 和 Electron 宿主能力不在本任务范围。
-**状态：** 已完成；实现 commits `c5247a0`、`9733abb`、`f6365f8`、`8c3ec90`；全仓 306/306 测试通过，typecheck、lint、build 均通过。详见 [T-006 验证](verification/2026-07-16-t-006-verification-feedback.md)。
+**状态：** 已完成并合入 `main`。实现 commits `c5247a0`、`9733abb`、`f6365f8`、`8c3ec90`；Codex 审查返工 commits `bea859a`、`cf11eed`；[PR #5](https://github.com/HrrToT/Todex/pull/5) 的 GitHub Actions CI 通过后，以 merge commit `adc33c3` 合入。最终独立复验为全仓 327/327 测试通过，typecheck、lint、build 和 `git diff --check` 均通过。详见 [T-006 验证](verification/2026-07-16-t-006-verification-feedback.md)。
 
 **Files:**
 - Create: `packages/harness-core/src/verification-runner.ts`
@@ -379,7 +379,7 @@ Expected: PASS. Add cases for dependency missing, timeout, no configured command
 Run: `git add packages/harness-core/src/verification-runner.ts packages/harness-core/src/agent-runner.ts packages/harness-core/test`
 Run: `git commit -m "feat: add verification feedback and repair limits"`
 
-实际提交：`c5247a0`（验证运行器）、`9733abb`（反馈回灌修复循环）、`f6365f8`（修复限制与环境停止）、`8c3ec90`（类型对齐修复）。最终独立复验为全仓 306/306 测试通过，typecheck、lint、build 均通过。详见 [T-006 验证](verification/2026-07-16-t-006-verification-feedback.md)。
+实际提交：`c5247a0`（验证运行器）、`9733abb`（反馈回灌修复循环）、`f6365f8`（修复限制与环境停止）、`8c3ec90`（类型对齐修复）、`4449fcc`（初始证据）、`bea859a`（P1/P2 审查返工）和 `cf11eed`（每轮 LLM 校验反馈快照冻结）。Codex 先完成规约符合性审查，再完成代码质量/安全审查；其发现的命令注册表信任、异常收敛、Unix 绝对路径脱敏、反馈不可变性和精确终态问题均以先红后绿方式修复。最终独立复验为全仓 327/327 测试通过，typecheck、lint、build 和 `git diff --check` 均通过；[PR #5](https://github.com/HrrToT/Todex/pull/5) CI 通过后以 `adc33c3` 合入 `main`。详见 [T-006 验证](verification/2026-07-16-t-006-verification-feedback.md)。
 
 ### Task 7: T-007 实现 Node.js/Python 探测与示例仓库
 
