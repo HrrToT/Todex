@@ -5,6 +5,7 @@ import {
   Guardrail,
   InMemoryApprovalStore,
   VerificationRunner,
+  type AgentRunner,
   type CommandExecution,
   type CommandExecutionCondition,
   type CommandRunner,
@@ -359,5 +360,219 @@ describe("Repair loop verification feedback", () => {
 
     expect(result.status).toBe("completed");
     expect(result.trace.some((e) => e.type === "verification_completed")).toBe(false);
+  });
+});
+
+class CancellingCommandRunner implements CommandRunner {
+  public readonly calls: {
+    argv: readonly string[];
+    workingDirectory: string;
+    timeoutMs: number;
+  }[] = [];
+  constructor(
+    private readonly execution: CommandExecution,
+    private readonly cancelFn: () => void,
+  ) {}
+  async run(input: {
+    readonly argv: readonly string[];
+    readonly workingDirectory: string;
+    readonly timeoutMs: number;
+  }): Promise<CommandExecution> {
+    this.calls.push({
+      argv: input.argv,
+      workingDirectory: input.workingDirectory,
+      timeoutMs: input.timeoutMs,
+    });
+    this.cancelFn();
+    return this.execution;
+  }
+}
+
+describe("Repair limit enforcement", () => {
+  it("stops after the initial patch plus three failed repair patches without a fifth LLM call", async () => {
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch: PATCH_1 },
+      { tool: "apply_patch", patch: PATCH_2 },
+      { tool: "apply_patch", patch: PATCH_1 },
+      { tool: "apply_patch", patch: PATCH_2 },
+    ]);
+    const commandRunner = new ScriptedCommandRunner([
+      makeExecution("test_failure", { stderr: "src/f1.ts error" }),
+      makeExecution("test_failure", { stderr: "src/f2.ts error" }),
+      makeExecution("test_failure", { stderr: "src/f3.ts error" }),
+      makeExecution("test_failure", { stderr: "src/f4.ts error" }),
+    ]);
+    const verificationRunner = new VerificationRunner({
+      registry: makeRegistry([makeCommand()]),
+      commandRunner,
+    });
+    const { createRunner: make } = makeRunnerWithVerification({
+      verificationRunner,
+      verificationCommandId: "p1.test",
+    });
+    const runner = make(llm);
+
+    const result = await runner.run({
+      runId: "r-repair-limit",
+      projectId: "p1",
+      task: "repair limit",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("failed_repair_limit");
+    expect(result.stopReason).toBe("failed_repair_limit");
+    expect(llm.contexts).toHaveLength(4);
+    expect(commandRunner.calls).toHaveLength(4);
+    expect(getVerification(llm.contexts[1])?.repairAttempts).toBe(0);
+    expect(getVerification(llm.contexts[2])?.repairAttempts).toBe(1);
+    expect(getVerification(llm.contexts[3])?.repairAttempts).toBe(2);
+  });
+
+  it.each([
+    ["quality_failure"],
+    ["build_failure"],
+  ])("treats %s as repairable and feeds feedback to next LLM turn", async (condition) => {
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch: PATCH_1 },
+      { tool: "apply_patch", patch: PATCH_2 },
+      { tool: "finish", summary: "done", completion: "verified" },
+    ]);
+    const commandRunner = new ScriptedCommandRunner([
+      makeExecution(condition as CommandExecutionCondition, { stderr: "src/f.ts issue" }),
+      makeExecution("success"),
+    ]);
+    const verificationRunner = new VerificationRunner({
+      registry: makeRegistry([makeCommand()]),
+      commandRunner,
+    });
+    const { createRunner: make } = makeRunnerWithVerification({
+      verificationRunner,
+      verificationCommandId: "p1.test",
+    });
+    const runner = make(llm);
+
+    const result = await runner.run({
+      runId: `r-repair-${condition}`,
+      projectId: "p1",
+      task: `repair ${condition}`,
+      workspaceRoot: "/workspace",
+    });
+
+    expect(getVerification(llm.contexts[1])?.classification).toBe(condition);
+    expect(getVerification(llm.contexts[2])?.classification).toBe("passed");
+    expect(result.status).toBe("completed");
+  });
+});
+
+describe("Environment failure stops", () => {
+  it.each([
+    ["dependency_missing"],
+    ["command_not_found"],
+    ["timeout"],
+    ["execution_error"],
+  ])(
+    "stops %s as failed_environment without consuming repair attempts or calling LLM again",
+    async (condition) => {
+      const llm = new ScriptedMockLlm([
+        { tool: "apply_patch", patch: PATCH_1 },
+      ]);
+      const commandRunner = new ScriptedCommandRunner([
+        makeExecution(condition as CommandExecutionCondition),
+      ]);
+      const verificationRunner = new VerificationRunner({
+        registry: makeRegistry([makeCommand()]),
+        commandRunner,
+      });
+      const { createRunner: make } = makeRunnerWithVerification({
+        verificationRunner,
+        verificationCommandId: "p1.test",
+      });
+      const runner = make(llm);
+
+      const result = await runner.run({
+        runId: `r-env-${condition}`,
+        projectId: "p1",
+        task: `environment ${condition}`,
+        workspaceRoot: "/workspace",
+      });
+
+      expect(result.status).toBe("failed_environment");
+      expect(result.stopReason).toBe(condition);
+      expect(llm.contexts).toHaveLength(1);
+      expect(commandRunner.calls).toHaveLength(1);
+    },
+  );
+});
+
+describe("Cancellation during verification", () => {
+  it("cancels safely before verification without extra dispatch or LLM turn", async () => {
+    const holder: { runner?: AgentRunner } = {};
+    const llm = new ScriptedMockLlm(
+      [{ tool: "apply_patch", patch: PATCH_1 }],
+      {
+        onTurn: (ctx) => {
+          if (holder.runner) {
+            holder.runner.cancel(ctx.runId);
+          }
+        },
+      },
+    );
+    const commandRunner = new ScriptedCommandRunner([]);
+    const verificationRunner = new VerificationRunner({
+      registry: makeRegistry([makeCommand()]),
+      commandRunner,
+    });
+    const { dispatcher, createRunner: make } = makeRunnerWithVerification({
+      verificationRunner,
+      verificationCommandId: "p1.test",
+    });
+    const runner = make(llm);
+    holder.runner = runner;
+
+    const result = await runner.run({
+      runId: "r-cancel-before",
+      projectId: "p1",
+      task: "cancel before verification",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("cancelled");
+    expect(result.stopReason).toBe("cancelled");
+    expect(commandRunner.calls).toHaveLength(0);
+    expect(llm.contexts).toHaveLength(1);
+    expect(dispatcher.calls).toHaveLength(1);
+  });
+
+  it("cancels safely after verification without extra LLM turn", async () => {
+    const holder: { runner?: AgentRunner } = {};
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch: PATCH_1 },
+      { tool: "finish", summary: "done", completion: "verified" },
+    ]);
+    const commandRunner = new CancellingCommandRunner(
+      makeExecution("test_failure", { stderr: "src/f.ts error" }),
+      () => holder.runner?.cancel("r-cancel-after"),
+    );
+    const verificationRunner = new VerificationRunner({
+      registry: makeRegistry([makeCommand()]),
+      commandRunner,
+    });
+    const { createRunner: make } = makeRunnerWithVerification({
+      verificationRunner,
+      verificationCommandId: "p1.test",
+    });
+    const runner = make(llm);
+    holder.runner = runner;
+
+    const result = await runner.run({
+      runId: "r-cancel-after",
+      projectId: "p1",
+      task: "cancel after verification",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("cancelled");
+    expect(result.stopReason).toBe("cancelled");
+    expect(llm.contexts).toHaveLength(1);
   });
 });
