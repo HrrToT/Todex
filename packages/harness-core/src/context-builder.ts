@@ -39,42 +39,42 @@ function freezeEntry(entry: MemoryEntry): MemoryEntry {
 }
 
 class FrozenReasonsMap implements ReadonlyMap<string, SelectionReason> {
-  private readonly backing: Map<string, SelectionReason>;
+  #backing: Map<string, SelectionReason>;
 
   constructor(backing: Map<string, SelectionReason>) {
-    this.backing = backing;
+    this.#backing = backing;
   }
 
   get size(): number {
-    return this.backing.size;
+    return this.#backing.size;
   }
 
   forEach(callback: (value: SelectionReason, key: string, map: ReadonlyMap<string, SelectionReason>) => void): void {
-    this.backing.forEach((v, k) => callback(v, k, this));
+    this.#backing.forEach((v, k) => callback(v, k, this));
   }
 
   get(key: string): SelectionReason | undefined {
-    return this.backing.get(key);
+    return this.#backing.get(key);
   }
 
   has(key: string): boolean {
-    return this.backing.has(key);
+    return this.#backing.has(key);
   }
 
   entries(): IterableIterator<[string, SelectionReason]> {
-    return this.backing.entries();
+    return this.#backing.entries();
   }
 
   keys(): IterableIterator<string> {
-    return this.backing.keys();
+    return this.#backing.keys();
   }
 
   values(): IterableIterator<SelectionReason> {
-    return this.backing.values();
+    return this.#backing.values();
   }
 
   [Symbol.iterator](): IterableIterator<[string, SelectionReason]> {
-    return this.backing[Symbol.iterator]();
+    return this.#backing[Symbol.iterator]();
   }
 }
 

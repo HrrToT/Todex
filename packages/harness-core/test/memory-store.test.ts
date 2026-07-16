@@ -366,3 +366,34 @@ describe("ContextBuilder container immutability", () => {
     expect(context1.entries[0].content).toBe("entry one");
   });
 });
+
+describe("FrozenReasonsMap backing isolation", () => {
+  it("does not expose backing Map via property access", () => {
+    const { store, repository } = makeStore();
+    store.remember(verifiedEntry({ content: "hidden backing" }));
+
+    const builder = new ContextBuilder({ repository });
+    const context = builder.build({ projectId: "p1" });
+
+    const backing = (context.reasons as unknown as { backing?: unknown }).backing;
+    expect(backing).toBeUndefined();
+  });
+
+  it("external backing access cannot pollute other contexts or EMPTY_MEMORY_CONTEXT", () => {
+    const { store, repository } = makeStore();
+    store.remember(verifiedEntry({ content: "entry one" }));
+
+    const builder = new ContextBuilder({ repository });
+    const context1 = builder.build({ projectId: "p1" });
+
+    const backing = (context1.reasons as unknown as { backing?: Map<string, SelectionReason> }).backing;
+    if (backing instanceof Map) {
+      backing.set("fake-id", "agent_observed");
+    }
+
+    const context2 = builder.build({ projectId: "p1" });
+    expect(context2.reasons.has("fake-id")).toBe(false);
+    expect(EMPTY_MEMORY_CONTEXT.reasons.has("fake-id")).toBe(false);
+    expect(context1.reasons.has("fake-id")).toBe(false);
+  });
+});

@@ -493,13 +493,15 @@ export class HarnessDispatcher implements ToolDispatcher {
       return failed(context.actionId, "internal_error");
     }
 
-    const validEventIds = new Set(
-      this.traceStore.list(context.runId).map((e) => e.eventId),
+    const factualEventIds = new Set(
+      this.traceStore.list(context.runId)
+        .filter((e) => e.type === "tool_completed" || e.type === "verification_completed")
+        .map((e) => e.eventId),
     );
 
     const seen = new Set<string>();
     for (const id of action.traceEventIds) {
-      if (!validEventIds.has(id) || seen.has(id)) {
+      if (!factualEventIds.has(id) || seen.has(id)) {
         return failed(context.actionId, "invalid_trace_evidence");
       }
       seen.add(id);

@@ -914,14 +914,16 @@ function makeRunnerWithHarnessDispatcher(workspaceRoot = "/workspace") {
 
 describe("AgentRunner remember memory integration", () => {
   it("writes remember to MemoryStore via concrete dispatcher and reuses across runs", async () => {
-    const { repository, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
 
     const llm1 = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
       {
         tool: "remember",
         kind: "project_convention",
         content: "use tabs not spaces",
-        traceEventIds: ["r-rem-1-0"],
+        traceEventIds: ["r-rem-1-1"],
       },
       { tool: "finish", summary: "done" },
     ]);
@@ -939,7 +941,7 @@ describe("AgentRunner remember memory integration", () => {
     expect(entries[0].kind).toBe("project_convention");
     expect(entries[0].trustLevel).toBe("agent_observed");
     expect(entries[0].content).toBe("use tabs not spaces");
-    expect(entries[0].sourceTraceIds).toEqual(["r-rem-1-0"]);
+    expect(entries[0].sourceTraceIds).toEqual(["r-rem-1-1"]);
 
     const llm2 = new ScriptedMockLlm([
       { tool: "finish", summary: "done" },
@@ -957,14 +959,16 @@ describe("AgentRunner remember memory integration", () => {
   });
 
   it("does not leak remember across projects", async () => {
-    const { repository, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
 
     const llm1 = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
       {
         tool: "remember",
         kind: "project_convention",
         content: "p1 convention",
-        traceEventIds: ["r-rem-iso-1-0"],
+        traceEventIds: ["r-rem-iso-1-1"],
       },
       { tool: "finish", summary: "done" },
     ]);
@@ -995,14 +999,16 @@ describe("AgentRunner remember memory integration", () => {
   });
 
   it("rejects sensitive remember content without persisting or leaking", async () => {
-    const { repository, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
 
     const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
       {
         tool: "remember",
         kind: "project_convention",
         content: "TOKEN=secret-value",
-        traceEventIds: ["r-rem-secret-0"],
+        traceEventIds: ["r-rem-secret-1"],
       },
       { tool: "finish", summary: "done" },
     ]);
@@ -1047,7 +1053,7 @@ describe("AgentRunner remember memory integration", () => {
         tool: "remember",
         kind: "failure_resolution",
         content: "fixed flaky test by adding wait",
-        traceEventIds: ["r-rem-trace-0", "r-rem-trace-1"],
+        traceEventIds: ["r-rem-trace-1"],
       },
       { tool: "finish", summary: "done" },
     ]);
@@ -1061,7 +1067,7 @@ describe("AgentRunner remember memory integration", () => {
 
     const entries = repository.all();
     expect(entries).toHaveLength(1);
-    expect(entries[0].sourceTraceIds).toEqual(["r-rem-trace-0", "r-rem-trace-1"]);
+    expect(entries[0].sourceTraceIds).toEqual(["r-rem-trace-1"]);
   });
 
   it("rejects agent_observed remember without trace IDs", async () => {
@@ -1177,7 +1183,7 @@ describe("AgentRunner remember trace evidence validation", () => {
         tool: "remember",
         kind: "failure_resolution",
         content: "fixed flaky test by adding wait",
-        traceEventIds: ["r-real-1-0", "r-real-1-1"],
+        traceEventIds: ["r-real-1-1"],
       },
       { tool: "finish", summary: "done" },
     ]);
@@ -1191,7 +1197,7 @@ describe("AgentRunner remember trace evidence validation", () => {
 
     const entries = repository.all();
     expect(entries).toHaveLength(1);
-    expect(entries[0].sourceTraceIds).toEqual(["r-real-1-0", "r-real-1-1"]);
+    expect(entries[0].sourceTraceIds).toEqual(["r-real-1-1"]);
 
     const llm2 = new ScriptedMockLlm([
       { tool: "finish", summary: "done" },
@@ -1254,6 +1260,179 @@ describe("AgentRunner remember trace evidence validation", () => {
       runId: "r-dup",
       projectId: "p1",
       task: "duplicate trace",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.results[1].status).toBe("failed");
+    expect(result.results[1].summary).toBe("invalid_trace_evidence");
+    expect(repository.all()).toHaveLength(0);
+  });
+});
+
+describe("AgentRunner remember factual trace type validation", () => {
+  it("rejects remember referencing its own action_requested as first action", async () => {
+    const { repository, createRunner: make } = makeRunnerWithHarnessDispatcher();
+
+    const llm = new ScriptedMockLlm([
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "self action_requested evidence",
+        traceEventIds: ["r-self-req-0"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    const result = await runner.run({
+      runId: "r-self-req",
+      projectId: "p1",
+      task: "self action_requested",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.results[0].status).toBe("failed");
+    expect(result.results[0].summary).toBe("invalid_trace_evidence");
+    expect(repository.all()).toHaveLength(0);
+
+    const llm2 = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner2 = make(llm2);
+    await runner2.run({
+      runId: "r-self-req-2",
+      projectId: "p1",
+      task: "verify empty",
+      workspaceRoot: "/workspace",
+    });
+    expect(llm2.contexts[0].memory?.entries).toHaveLength(0);
+  });
+
+  it("rejects remember referencing a prior action_requested even from a real tool", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "action_requested evidence",
+        traceEventIds: ["r-act-req-0"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    const result = await runner.run({
+      runId: "r-act-req",
+      projectId: "p1",
+      task: "action_requested evidence",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.results[1].status).toBe("failed");
+    expect(result.results[1].summary).toBe("invalid_trace_evidence");
+    expect(repository.all()).toHaveLength(0);
+  });
+
+  it("accepts remember referencing a prior tool_completed", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "tool_completed evidence",
+        traceEventIds: ["r-tool-comp-1"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    await runner.run({
+      runId: "r-tool-comp",
+      projectId: "p1",
+      task: "tool_completed evidence",
+      workspaceRoot: "/workspace",
+    });
+
+    const entries = repository.all();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].sourceTraceIds).toEqual(["r-tool-comp-1"]);
+
+    const llm2 = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner2 = make(llm2);
+    await runner2.run({
+      runId: "r-tool-comp-2",
+      projectId: "p1",
+      task: "reuse",
+      workspaceRoot: "/workspace",
+    });
+    expect(llm2.contexts[0].memory?.entries).toHaveLength(1);
+    expect(llm2.contexts[0].memory?.entries[0].content).toBe("tool_completed evidence");
+  });
+
+  it("accepts remember referencing a verification_completed trace", async () => {
+    const { repository, fs, traceStore, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm(
+      [
+        { tool: "read_file", path: "src/a.ts" },
+        {
+          tool: "remember",
+          kind: "project_convention",
+          content: "verification evidence",
+          traceEventIds: ["r-verif-2"],
+        },
+        { tool: "finish", summary: "done" },
+      ],
+      {
+        onTurn: (ctx) => {
+          if (ctx.trace.length === 2) {
+            traceStore.append({
+              runId: "r-verif",
+              type: "verification_completed",
+              payloadSummary: "tests passed",
+            });
+          }
+        },
+      },
+    );
+    const runner = make(llm);
+    await runner.run({
+      runId: "r-verif",
+      projectId: "p1",
+      task: "verification evidence",
+      workspaceRoot: "/workspace",
+    });
+
+    const entries = repository.all();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].sourceTraceIds).toEqual(["r-verif-2"]);
+  });
+
+  it("rejects mixed tool_completed and action_requested IDs entirely", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "mixed type evidence",
+        traceEventIds: ["r-mixed-type-1", "r-mixed-type-0"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    const result = await runner.run({
+      runId: "r-mixed-type",
+      projectId: "p1",
+      task: "mixed type",
       workspaceRoot: "/workspace",
     });
 
