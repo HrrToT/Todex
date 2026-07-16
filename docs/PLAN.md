@@ -133,6 +133,8 @@ Run: `git commit -m "chore: bootstrap Todex monorepo"`
 
 **依赖：** T-001。
 **建议责任：** DeepSeek，可独立完成。
+
+冻结设计与逐步实施计划：[T-006 设计](superpowers/specs/2026-07-16-t-006-verification-feedback-design.md)、[T-006 实施计划](superpowers/plans/2026-07-16-t-006-verification-feedback.md)、[DeepSeek 任务卡](task-cards/T-006-verification-feedback-and-repair.md)。T-006 只使用注入式 CommandRunner 和已确认的固定 commandId；真实进程执行、项目探测、SQLite 和 Electron 宿主能力不在本任务范围。
 **状态：** 已完成，冷启动验证 PR #1；实现 commit `a87325e`，P1 修复 commit `a04ad9f`。
 
 **Files:**
