@@ -1,4 +1,4 @@
-import type { Action, ApprovalRequest, RunStatus, ToolResult } from "@todex/contracts";
+import type { Action, ApprovalRequest, RunStatus, ToolResult, VerificationClassification, VerificationResult } from "@todex/contracts";
 import { parseAction } from "@todex/contracts";
 import type {
   ApprovalDecisionInput,
@@ -17,8 +17,22 @@ import { InMemoryTraceStore } from "./trace-store.js";
 import { RunStateMachine } from "./run-state-machine.js";
 import type { ContextBuilder } from "./context-builder.js";
 import { EMPTY_MEMORY_CONTEXT } from "./context-builder.js";
+import type { VerificationFeedback, VerificationRunner } from "./verification-runner.js";
 
 const DEFAULT_MAX_STEPS = 50;
+
+const REPAIRABLE_CLASSIFICATIONS: ReadonlySet<VerificationClassification> = new Set([
+  "test_failure",
+  "quality_failure",
+  "build_failure",
+]);
+
+const ENVIRONMENT_CLASSIFICATIONS: ReadonlySet<VerificationClassification> = new Set([
+  "command_not_found",
+  "dependency_missing",
+  "timeout",
+  "execution_error",
+]);
 
 export interface RunnerOptions {
   readonly llm: LlmClient;
@@ -28,6 +42,8 @@ export interface RunnerOptions {
   readonly clock: Clock;
   readonly traceStore?: TraceStore;
   readonly contextBuilder?: ContextBuilder;
+  readonly verificationRunner?: VerificationRunner;
+  readonly verificationCommandId?: string;
 }
 
 interface PendingAction {
@@ -46,6 +62,9 @@ interface RunState {
   results: ToolResult[];
   pendingAction?: PendingAction;
   stateMachine: RunStateMachine;
+  repairAttempts: number;
+  latestVerification?: VerificationResult;
+  verificationFeedback?: VerificationFeedback;
 }
 
 function summarizeAction(action: Action): string {
@@ -77,6 +96,8 @@ export class AgentRunner {
   private readonly clock: Clock;
   private readonly traceStore: TraceStore;
   private readonly contextBuilder?: ContextBuilder;
+  private readonly verificationRunner?: VerificationRunner;
+  private readonly verificationCommandId?: string;
   private readonly cancelledRuns = new Set<string>();
   private readonly runStates = new Map<string, RunState>();
 
@@ -88,6 +109,8 @@ export class AgentRunner {
     this.clock = options.clock;
     this.traceStore = options.traceStore ?? new InMemoryTraceStore();
     this.contextBuilder = options.contextBuilder;
+    this.verificationRunner = options.verificationRunner;
+    this.verificationCommandId = options.verificationCommandId;
   }
 
   cancel(runId: string): void {
@@ -104,6 +127,7 @@ export class AgentRunner {
       step: 0,
       results: [],
       stateMachine: new RunStateMachine(),
+      repairAttempts: 0,
     };
     this.runStates.set(input.runId, state);
     return this.runLoop(state);
@@ -194,7 +218,21 @@ export class AgentRunner {
       type: "tool_completed",
       payloadSummary: `${result.status}: ${result.summary}`,
     });
+    const approvedAction = state.pendingAction?.action;
     state.pendingAction = undefined;
+
+    if (
+      approvedAction?.tool === "apply_patch" &&
+      result.status === "succeeded" &&
+      this.verificationRunner &&
+      this.verificationCommandId
+    ) {
+      const terminal = await this.runVerification(state);
+      if (terminal) {
+        return terminal;
+      }
+    }
+
     state.step += 1;
     return this.runLoop(state);
   }
@@ -230,6 +268,7 @@ export class AgentRunner {
         previousResults: [...state.results],
         trace: this.traceStore.list(state.runId),
         memory,
+        verification: state.verificationFeedback,
       };
 
       let raw: unknown;
@@ -272,8 +311,16 @@ export class AgentRunner {
       });
 
       if (action.tool === "finish") {
-        const status: RunStatus =
-          action.completion === "verified" ? "completed" : "completed_unverified";
+        let status: RunStatus;
+        if (action.completion === "unverified") {
+          status = "completed_unverified";
+        } else {
+          if (this.verificationRunner) {
+            status = state.latestVerification?.classification === "passed" ? "completed" : "completed_unverified";
+          } else {
+            status = "completed";
+          }
+        }
         this.transitionSafely(state, status);
         this.traceStore.append({
           runId: state.runId,
@@ -333,8 +380,118 @@ export class AgentRunner {
         payloadSummary: `${result.status}: ${result.summary}`,
       });
 
+      if (
+        action.tool === "apply_patch" &&
+        result.status === "succeeded" &&
+        this.verificationRunner &&
+        this.verificationCommandId
+      ) {
+        const terminal = await this.runVerification(state);
+        if (terminal) {
+          return terminal;
+        }
+      }
+
       state.step += 1;
     }
+  }
+
+  private async runVerification(state: RunState): Promise<RunResult | undefined> {
+    if (this.cancelledRuns.has(state.runId)) {
+      this.transitionSafely(state, "cancelled");
+      this.traceStore.append({
+        runId: state.runId,
+        type: "run_cancelled",
+        payloadSummary: "cancelled before verification",
+      });
+      return this.buildResult(state, "cancelled", "cancelled");
+    }
+
+    const isRepair =
+      state.latestVerification !== undefined &&
+      REPAIRABLE_CLASSIFICATIONS.has(state.latestVerification.classification);
+    if (isRepair) {
+      state.repairAttempts += 1;
+    }
+
+    state.latestVerification = undefined;
+    state.verificationFeedback = undefined;
+
+    const verificationResult = await this.verificationRunner!.run({
+      projectId: state.projectId,
+      commandId: this.verificationCommandId!,
+      runId: state.runId,
+    });
+
+    if (this.cancelledRuns.has(state.runId)) {
+      this.traceStore.append({
+        runId: state.runId,
+        type: "verification_completed",
+        payloadSummary: `${verificationResult.classification}: cancelled`,
+      });
+      this.transitionSafely(state, "cancelled");
+      this.traceStore.append({
+        runId: state.runId,
+        type: "run_cancelled",
+        payloadSummary: "cancelled after verification",
+      });
+      return this.buildResult(state, "cancelled", "cancelled");
+    }
+
+    this.traceStore.append({
+      runId: state.runId,
+      type: "verification_completed",
+      payloadSummary: `${verificationResult.classification}: ${verificationResult.failureSummary.slice(0, 100)}`,
+    });
+
+    state.latestVerification = verificationResult;
+
+    if (ENVIRONMENT_CLASSIFICATIONS.has(verificationResult.classification)) {
+      this.transitionSafely(state, "failed");
+      this.traceStore.append({
+        runId: state.runId,
+        type: "run_failed",
+        payloadSummary: `failed_environment: ${verificationResult.classification}`,
+      });
+      return this.buildResult(state, "failed_environment", verificationResult.classification);
+    }
+
+    if (verificationResult.classification === "cancelled") {
+      this.transitionSafely(state, "cancelled");
+      this.traceStore.append({
+        runId: state.runId,
+        type: "run_cancelled",
+        payloadSummary: "verification cancelled",
+      });
+      return this.buildResult(state, "cancelled", "cancelled");
+    }
+
+    if (REPAIRABLE_CLASSIFICATIONS.has(verificationResult.classification)) {
+      if (state.repairAttempts >= 3) {
+        this.transitionSafely(state, "failed");
+        this.traceStore.append({
+          runId: state.runId,
+          type: "run_failed",
+          payloadSummary: "failed_repair_limit",
+        });
+        return this.buildResult(state, "failed_repair_limit", "failed_repair_limit");
+      }
+      state.verificationFeedback = this.verificationRunner!.toFeedback(
+        verificationResult,
+        state.repairAttempts,
+      );
+      return undefined;
+    }
+
+    if (verificationResult.classification === "passed") {
+      state.verificationFeedback = this.verificationRunner!.toFeedback(
+        verificationResult,
+        state.repairAttempts,
+      );
+      return undefined;
+    }
+
+    return undefined;
   }
 
   private async dispatchSafely(

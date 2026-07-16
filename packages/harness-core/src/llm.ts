@@ -7,6 +7,7 @@ import type {
   TraceEvent,
 } from "@todex/contracts";
 import type { SelectedMemoryContext } from "./context-builder.js";
+import type { VerificationFeedback } from "./verification-runner.js";
 
 export interface LlmTurnContext {
   readonly runId: string;
@@ -16,6 +17,7 @@ export interface LlmTurnContext {
   readonly previousResults: readonly ToolResult[];
   readonly trace: readonly TraceEvent[];
   readonly memory?: SelectedMemoryContext;
+  readonly verification?: VerificationFeedback;
 }
 
 export interface LlmClient {
