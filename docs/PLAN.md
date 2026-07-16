@@ -331,13 +331,18 @@ Run: `git commit -m "feat: add bounded file tools and project memory"`
 **依赖：** T-003、T-005。
 **建议责任：** DeepSeek，可独立完成。
 
+冻结设计与逐步实施计划：[T-006 设计](superpowers/specs/2026-07-16-t-006-verification-feedback-design.md)、[T-006 实施计划](superpowers/plans/2026-07-16-t-006-verification-feedback.md)、[DeepSeek 任务卡](task-cards/T-006-verification-feedback-and-repair.md)。T-006 只使用注入式 CommandRunner 和已确认的固定 commandId；真实进程执行、项目探测、SQLite 和 Electron 宿主能力不在本任务范围。
+**状态：** 已完成；实现 commits `c5247a0`、`9733abb`、`f6365f8`、`8c3ec90`；全仓 306/306 测试通过，typecheck、lint、build 均通过。详见 [T-006 验证](verification/2026-07-16-t-006-verification-feedback.md)。
+
 **Files:**
 - Create: `packages/harness-core/src/verification-runner.ts`
 - Modify: `packages/harness-core/src/agent-runner.ts`
+- Modify: `packages/harness-core/src/llm.ts`
+- Modify: `packages/harness-core/src/index.ts`
 - Create: `packages/harness-core/test/verification-runner.test.ts`
 - Create: `packages/harness-core/test/repair-loop.test.ts`
 
-- [ ] **Step 1: Write failing feedback-loop tests**
+- [x] **Step 1: Write failing feedback-loop tests**
 
 ```ts
 it("feeds a failing test summary into the next LLM turn and then passes", async () => {
@@ -355,24 +360,26 @@ it("feeds a failing test summary into the next LLM turn and then passes", async 
 });
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
-Run: `pnpm --filter @todex/harness-core test --run verification-runner.test.ts repair-loop.test.ts`
+Run: `pnpm.cmd --filter @todex/harness-core test --run verification-runner.test.ts repair-loop.test.ts`
 Expected: FAIL because verification and repair feedback are absent.
 
-- [ ] **Step 3: Implement verification and repair rules**
+- [x] **Step 3: Implement verification and repair rules**
 
 Implement injected `CommandRunner`, exact `commandId` lookup, classifications from SPEC, truncated feedback packets, `maxRepairAttempts = 3`, and terminal statuses `completed`, `completed_unverified`, `failed_repair_limit`, `failed_environment`, and `cancelled`.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
-Run: `pnpm --filter @todex/harness-core test --run verification-runner.test.ts repair-loop.test.ts`
+Run: `pnpm.cmd --filter @todex/harness-core test --run verification-runner.test.ts repair-loop.test.ts`
 Expected: PASS. Add cases for dependency missing, timeout, no configured command, and fourth repair failure.
 
-- [ ] **Step 5: Commit and record**
+- [x] **Step 5: Commit and record**
 
 Run: `git add packages/harness-core/src/verification-runner.ts packages/harness-core/src/agent-runner.ts packages/harness-core/test`
 Run: `git commit -m "feat: add verification feedback and repair limits"`
+
+实际提交：`c5247a0`（验证运行器）、`9733abb`（反馈回灌修复循环）、`f6365f8`（修复限制与环境停止）、`8c3ec90`（类型对齐修复）。最终独立复验为全仓 306/306 测试通过，typecheck、lint、build 均通过。详见 [T-006 验证](verification/2026-07-16-t-006-verification-feedback.md)。
 
 ### Task 7: T-007 实现 Node.js/Python 探测与示例仓库
 
