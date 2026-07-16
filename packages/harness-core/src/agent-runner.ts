@@ -268,7 +268,17 @@ export class AgentRunner {
         previousResults: [...state.results],
         trace: this.traceStore.list(state.runId),
         memory,
-        verification: state.verificationFeedback,
+        verification: state.verificationFeedback
+          ? {
+              classification: state.verificationFeedback.classification,
+              commandId: state.verificationFeedback.commandId,
+              exitCode: state.verificationFeedback.exitCode,
+              durationMs: state.verificationFeedback.durationMs,
+              failureSummary: state.verificationFeedback.failureSummary,
+              relatedPaths: [...state.verificationFeedback.relatedPaths],
+              repairAttempts: state.verificationFeedback.repairAttempts,
+            }
+          : undefined,
       };
 
       let raw: unknown;
@@ -447,7 +457,7 @@ export class AgentRunner {
     state.latestVerification = verificationResult;
 
     if (ENVIRONMENT_CLASSIFICATIONS.has(verificationResult.classification)) {
-      this.transitionSafely(state, "failed");
+      this.transitionSafely(state, "failed_environment");
       this.traceStore.append({
         runId: state.runId,
         type: "run_failed",
@@ -468,7 +478,7 @@ export class AgentRunner {
 
     if (REPAIRABLE_CLASSIFICATIONS.has(verificationResult.classification)) {
       if (state.repairAttempts >= 3) {
-        this.transitionSafely(state, "failed");
+        this.transitionSafely(state, "failed_repair_limit");
         this.traceStore.append({
           runId: state.runId,
           type: "run_failed",
@@ -522,7 +532,7 @@ export class AgentRunner {
     return undefined;
   }
 
-  private transitionSafely(state: RunState, to: "running" | "dispatching" | "awaiting_approval" | "completed" | "completed_unverified" | "failed" | "cancelled"): void {
+  private transitionSafely(state: RunState, to: "running" | "dispatching" | "awaiting_approval" | "completed" | "completed_unverified" | "failed" | "failed_repair_limit" | "failed_environment" | "cancelled"): void {
     if (state.stateMachine.getCurrentState() === to) {
       return;
     }

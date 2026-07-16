@@ -574,3 +574,198 @@ describe("Cancellation during verification", () => {
     expect(llm.contexts).toHaveLength(1);
   });
 });
+
+describe("CommandRunner reject convergence in AgentRunner", () => {
+  it("stops as failed_environment when CommandRunner throws, with verification_completed and run_failed traces", async () => {
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch: PATCH_1 },
+    ]);
+    const throwingRunner: CommandRunner = {
+      run: async () => {
+        throw new Error("spawn failed TOKEN=secret-value at /home/user/project/src/file.ts");
+      },
+    };
+    const verificationRunner = new VerificationRunner({
+      registry: makeRegistry([makeCommand()]),
+      commandRunner: throwingRunner,
+    });
+    const { createRunner: make } = makeRunnerWithVerification({
+      verificationRunner,
+      verificationCommandId: "p1.test",
+    });
+    const runner = make(llm);
+
+    const result = await runner.run({
+      runId: "r-throw",
+      projectId: "p1",
+      task: "throw test",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("failed_environment");
+    expect(result.stopReason).toBe("execution_error");
+    expect(llm.contexts).toHaveLength(1);
+    expect(result.trace.some((e) => e.type === "verification_completed")).toBe(true);
+    expect(result.trace.some((e) => e.type === "run_failed")).toBe(true);
+    const allTraceText = JSON.stringify(result.trace);
+    expect(allTraceText).not.toContain("secret-value");
+    expect(allTraceText).not.toContain("/home/user");
+  });
+});
+
+describe("P1-3: absolute path and secret redaction in trace and LLM context", () => {
+  it("does not leak absolute paths or secrets into trace payload or next LLM context", async () => {
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch: PATCH_1 },
+      { tool: "apply_patch", patch: PATCH_2 },
+      { tool: "finish", summary: "done", completion: "verified" },
+    ]);
+    const commandRunner = new ScriptedCommandRunner([
+      makeExecution("test_failure", {
+        stderr: 'at (/home/lenovo/project/src/a.ts:12)\nfile="/private/tmp/error.log"\nTOKEN=secret-value\nsrc/relative.ts',
+      }),
+      makeExecution("success"),
+    ]);
+    const verificationRunner = new VerificationRunner({
+      registry: makeRegistry([makeCommand()]),
+      commandRunner,
+    });
+    const { createRunner: make } = makeRunnerWithVerification({
+      verificationRunner,
+      verificationCommandId: "p1.test",
+    });
+    const runner = make(llm);
+
+    const result = await runner.run({
+      runId: "r-redact",
+      projectId: "p1",
+      task: "redaction test",
+      workspaceRoot: "/workspace",
+    });
+
+    const traceText = JSON.stringify(result.trace);
+    expect(traceText).not.toContain("secret-value");
+    expect(traceText).not.toContain("/home/lenovo");
+    expect(traceText).not.toContain("/private/tmp");
+
+    const ctx1Verification = llm.contexts[1].verification;
+    expect(ctx1Verification).toBeDefined();
+    const ctxText = JSON.stringify(ctx1Verification);
+    expect(ctxText).not.toContain("secret-value");
+    expect(ctxText).not.toContain("/home/lenovo");
+    expect(ctxText).not.toContain("/private/tmp");
+    expect(ctx1Verification?.relatedPaths).toContain("src/relative.ts");
+    expect(ctx1Verification?.relatedPaths.some((p) => p.includes("home"))).toBe(false);
+    expect(ctx1Verification?.relatedPaths.some((p) => p.includes("private"))).toBe(false);
+  });
+});
+
+describe("P1-4: VerificationFeedback per-turn immutability", () => {
+  it("provides independent failure feedback snapshots; mutation of first context does not affect next turn", async () => {
+    let firstClassification = "";
+    let firstRepairAttempts = -1;
+    let firstRelatedPaths: string[] = [];
+    const llm = new ScriptedMockLlm(
+      [
+        { tool: "apply_patch", patch: PATCH_1 },
+        { tool: "read_file", path: "src/a.ts" },
+        { tool: "apply_patch", patch: PATCH_2 },
+        { tool: "finish", summary: "done", completion: "verified" },
+      ],
+      {
+        onTurn: (ctx) => {
+          if (ctx.verification && firstClassification === "") {
+            firstClassification = ctx.verification.classification;
+            firstRepairAttempts = ctx.verification.repairAttempts;
+            firstRelatedPaths = [...ctx.verification.relatedPaths];
+            const v = ctx.verification as unknown as {
+              classification: string;
+              repairAttempts: number;
+              relatedPaths: string[];
+            };
+            v.classification = "passed";
+            v.repairAttempts = 999;
+            v.relatedPaths.push("injected/path.ts");
+          }
+        },
+      },
+    );
+    const commandRunner = new ScriptedCommandRunner([
+      makeExecution("test_failure", { stderr: "src/failing.ts error" }),
+      makeExecution("success"),
+    ]);
+    const verificationRunner = new VerificationRunner({
+      registry: makeRegistry([makeCommand()]),
+      commandRunner,
+    });
+    const { createRunner: make } = makeRunnerWithVerification({
+      verificationRunner,
+      verificationCommandId: "p1.test",
+    });
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-immutable-fail",
+      projectId: "p1",
+      task: "immutability test",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(firstClassification).toBe("test_failure");
+    expect(firstRepairAttempts).toBe(0);
+    expect(firstRelatedPaths).toContain("src/failing.ts");
+
+    expect(llm.contexts[2].verification?.classification).toBe("test_failure");
+    expect(llm.contexts[2].verification?.repairAttempts).toBe(0);
+    expect(llm.contexts[2].verification?.relatedPaths).not.toContain("injected/path.ts");
+    expect(llm.contexts[2].verification?.relatedPaths).toContain("src/failing.ts");
+  });
+
+  it("provides independent passed feedback snapshots; mutation does not affect next turn", async () => {
+    let firstClassification = "";
+    const llm = new ScriptedMockLlm(
+      [
+        { tool: "apply_patch", patch: PATCH_1 },
+        { tool: "read_file", path: "src/a.ts" },
+        { tool: "finish", summary: "done", completion: "verified" },
+      ],
+      {
+        onTurn: (ctx) => {
+          if (ctx.verification && firstClassification === "") {
+            firstClassification = ctx.verification.classification;
+            const v = ctx.verification as unknown as {
+              classification: string;
+              relatedPaths: string[];
+            };
+            v.classification = "test_failure";
+            v.relatedPaths.push("injected/path.ts");
+          }
+        },
+      },
+    );
+    const commandRunner = new ScriptedCommandRunner([
+      makeExecution("success"),
+    ]);
+    const verificationRunner = new VerificationRunner({
+      registry: makeRegistry([makeCommand()]),
+      commandRunner,
+    });
+    const { createRunner: make } = makeRunnerWithVerification({
+      verificationRunner,
+      verificationCommandId: "p1.test",
+    });
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-immutable-pass",
+      projectId: "p1",
+      task: "immutability pass test",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(firstClassification).toBe("passed");
+
+    expect(llm.contexts[2].verification?.classification).toBe("passed");
+    expect(llm.contexts[2].verification?.relatedPaths).not.toContain("injected/path.ts");
+  });
+});

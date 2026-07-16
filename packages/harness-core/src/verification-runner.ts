@@ -70,7 +70,7 @@ const SENSITIVE_VALUE_PATTERN =
   /((?:api[_-]?key|secret|token|password|credential|private[_-]?key)\s*[=:]\s*)[^\s,;\r\n]+/gi;
 
 const WINDOWS_ABSOLUTE_PATH_PATTERN = /[A-Za-z]:[\\/][^\s\r\n]*/g;
-const UNIX_ABSOLUTE_PATH_PATTERN = /(?<![^\s])(\/[^\s\r\n]*)/g;
+const UNIX_ABSOLUTE_PATH_PATTERN = /(?<![a-zA-Z0-9_.-])(\/[^\s\r\n]*)/g;
 
 const RELATIVE_PATH_PATTERN = /(?:[a-zA-Z0-9_.-]+\/)+[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+/g;
 
@@ -126,7 +126,12 @@ export class VerificationRunner {
   }): Promise<VerificationResult> {
     const command = this.registry.find(input.projectId, input.commandId);
 
-    if (!command || !command.confirmedByUser) {
+    if (
+      !command ||
+      !command.confirmedByUser ||
+      command.projectId !== input.projectId ||
+      command.commandId !== input.commandId
+    ) {
       return {
         verificationId: this.verificationIdFactory(),
         runId: input.runId,
@@ -139,11 +144,29 @@ export class VerificationRunner {
       };
     }
 
-    const execution = await this.commandRunner.run({
-      argv: command.argv,
-      workingDirectory: command.workingDirectory,
-      timeoutMs: command.timeoutMs,
-    });
+    let execution: CommandExecution;
+    try {
+      execution = await this.commandRunner.run({
+        argv: command.argv,
+        workingDirectory: command.workingDirectory,
+        timeoutMs: command.timeoutMs,
+      });
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const redacted = applyRedaction("", rawMessage);
+      const failureSummary = truncateSummary(redacted);
+      const relatedPaths = extractRelatedPaths(redacted);
+      return {
+        verificationId: this.verificationIdFactory(),
+        runId: input.runId,
+        commandId: input.commandId,
+        classification: "execution_error",
+        exitCode: null,
+        durationMs: 0,
+        failureSummary,
+        relatedPaths,
+      };
+    }
 
     const classification = CONDITION_TO_CLASSIFICATION[execution.condition];
     const redacted = applyRedaction(execution.stdout, execution.stderr);
@@ -163,14 +186,14 @@ export class VerificationRunner {
   }
 
   toFeedback(result: VerificationResult, repairAttempts: number): VerificationFeedback {
-    return {
+    return Object.freeze({
       classification: result.classification,
       commandId: result.commandId,
       exitCode: result.exitCode,
       durationMs: result.durationMs,
       failureSummary: result.failureSummary,
-      relatedPaths: result.relatedPaths,
+      relatedPaths: Object.freeze([...result.relatedPaths]),
       repairAttempts,
-    };
+    });
   }
 }

@@ -101,6 +101,34 @@ describe("VerificationRunner command authorization", () => {
     expect(result.classification).toBe("command_not_found");
     expect(commandRunner.calls).toHaveLength(0);
   });
+
+  it("does not call CommandRunner when registry returns a command with wrong projectId", async () => {
+    const wrongCommand = makeCommand({ projectId: "p2", commandId: "p1.test", confirmedByUser: true });
+    const lyingRegistry: ConfiguredCommandRegistry = {
+      find: () => wrongCommand,
+    };
+    const commandRunner = makeCommandRunner(makeExecution("success"));
+    const runner = new VerificationRunner({ registry: lyingRegistry, commandRunner });
+
+    const result = await runner.run({ projectId: "p1", commandId: "p1.test", runId: "r1" });
+
+    expect(result.classification).toBe("command_not_found");
+    expect(commandRunner.calls).toHaveLength(0);
+  });
+
+  it("does not call CommandRunner when registry returns a command with wrong commandId", async () => {
+    const wrongCommand = makeCommand({ projectId: "p1", commandId: "p2.lint", confirmedByUser: true });
+    const lyingRegistry: ConfiguredCommandRegistry = {
+      find: () => wrongCommand,
+    };
+    const commandRunner = makeCommandRunner(makeExecution("success"));
+    const runner = new VerificationRunner({ registry: lyingRegistry, commandRunner });
+
+    const result = await runner.run({ projectId: "p1", commandId: "p1.test", runId: "r1" });
+
+    expect(result.classification).toBe("command_not_found");
+    expect(commandRunner.calls).toHaveLength(0);
+  });
 });
 
 describe("VerificationRunner classification mapping", () => {
@@ -262,6 +290,100 @@ describe("VerificationRunner redaction and truncation", () => {
     expect(result.failureSummary).not.toContain("C:\\Users");
     expect(result.relatedPaths.length).toBe(20);
   });
+
+  it("redacts unix absolute paths after parentheses boundary", async () => {
+    const registry = makeRegistry([makeCommand()]);
+    const commandRunner = makeCommandRunner(
+      makeExecution("test_failure", {
+        stderr: "Error at (/home/lenovo/project/src/a.ts:12)",
+      }),
+    );
+    const runner = new VerificationRunner({ registry, commandRunner });
+
+    const result = await runner.run({ projectId: "p1", commandId: "p1.test", runId: "r1" });
+
+    expect(result.failureSummary).not.toContain("/home/lenovo");
+    expect(result.failureSummary).not.toContain("/private");
+  });
+
+  it("redacts unix absolute paths after quote boundary", async () => {
+    const registry = makeRegistry([makeCommand()]);
+    const commandRunner = makeCommandRunner(
+      makeExecution("test_failure", {
+        stderr: 'file="/private/tmp/error.log"',
+      }),
+    );
+    const runner = new VerificationRunner({ registry, commandRunner });
+
+    const result = await runner.run({ projectId: "p1", commandId: "p1.test", runId: "r1" });
+
+    expect(result.failureSummary).not.toContain("/private/tmp");
+  });
+
+  it("redacts unix absolute paths after equals boundary", async () => {
+    const registry = makeRegistry([makeCommand()]);
+    const commandRunner = makeCommandRunner(
+      makeExecution("test_failure", {
+        stderr: "path=/var/log/app/error.log",
+      }),
+    );
+    const runner = new VerificationRunner({ registry, commandRunner });
+
+    const result = await runner.run({ projectId: "p1", commandId: "p1.test", runId: "r1" });
+
+    expect(result.failureSummary).not.toContain("/var/log");
+  });
+
+  it("redacts unix absolute paths after bracket boundary", async () => {
+    const registry = makeRegistry([makeCommand()]);
+    const commandRunner = makeCommandRunner(
+      makeExecution("test_failure", {
+        stderr: "files=[/opt/app/config.json,/etc/app.conf]",
+      }),
+    );
+    const runner = new VerificationRunner({ registry, commandRunner });
+
+    const result = await runner.run({ projectId: "p1", commandId: "p1.test", runId: "r1" });
+
+    expect(result.failureSummary).not.toContain("/opt/app");
+    expect(result.failureSummary).not.toContain("/etc/app");
+  });
+
+  it("does not redact relative paths like src/file.ts or package/name", async () => {
+    const registry = makeRegistry([makeCommand()]);
+    const commandRunner = makeCommandRunner(
+      makeExecution("test_failure", {
+        stderr: "src/file.ts\npackage/name\npackages/core/lib.ts",
+      }),
+    );
+    const runner = new VerificationRunner({ registry, commandRunner });
+
+    const result = await runner.run({ projectId: "p1", commandId: "p1.test", runId: "r1" });
+
+    expect(result.failureSummary).toContain("src/file.ts");
+    expect(result.failureSummary).toContain("package/name");
+    expect(result.failureSummary).toContain("packages/core/lib.ts");
+  });
+
+  it("redacts all absolute path fragments and secrets from complex output", async () => {
+    const registry = makeRegistry([makeCommand()]);
+    const commandRunner = makeCommandRunner(
+      makeExecution("test_failure", {
+        stderr: 'at (/home/lenovo/project/src/a.ts:12)\nfile="/private/tmp/error.log"\nTOKEN=secret-value\nsrc/relative.ts',
+      }),
+    );
+    const runner = new VerificationRunner({ registry, commandRunner });
+
+    const result = await runner.run({ projectId: "p1", commandId: "p1.test", runId: "r1" });
+
+    const allText = result.failureSummary + result.relatedPaths.join("");
+    expect(allText).not.toContain("secret-value");
+    expect(allText).not.toContain("/home/lenovo");
+    expect(allText).not.toContain("/private/tmp");
+    expect(result.relatedPaths).toContain("src/relative.ts");
+    expect(result.relatedPaths.some((p) => p.includes("home"))).toBe(false);
+    expect(result.relatedPaths.some((p) => p.includes("private"))).toBe(false);
+  });
 });
 
 describe("VerificationRunner toFeedback", () => {
@@ -280,5 +402,53 @@ describe("VerificationRunner toFeedback", () => {
     expect(feedback.failureSummary).toBe(result.failureSummary);
     expect(feedback.relatedPaths).toEqual(result.relatedPaths);
     expect(feedback.repairAttempts).toBe(2);
+  });
+});
+
+describe("VerificationRunner CommandRunner reject convergence", () => {
+  it("catches a thrown Error and returns execution_error with redacted summary", async () => {
+    const registry = makeRegistry([makeCommand()]);
+    const throwingRunner: CommandRunner = {
+      run: async () => {
+        throw new Error("spawn failed TOKEN=secret-value at /home/user/project/src/file.ts");
+      },
+    };
+    const runner = new VerificationRunner({ registry, commandRunner: throwingRunner });
+
+    const result = await runner.run({ projectId: "p1", commandId: "p1.test", runId: "r1" });
+
+    expect(result.classification).toBe("execution_error");
+    expect(result.exitCode).toBeNull();
+    expect(result.failureSummary).not.toContain("secret-value");
+    expect(result.failureSummary).not.toContain("/home/user");
+    expect(result.failureSummary.length).toBeLessThanOrEqual(2000);
+  });
+
+  it("catches a rejected promise and returns execution_error", async () => {
+    const registry = makeRegistry([makeCommand()]);
+    const rejectingRunner: CommandRunner = {
+      run: async () => Promise.reject(new Error("timeout SIGKILL")),
+    };
+    const runner = new VerificationRunner({ registry, commandRunner: rejectingRunner });
+
+    const result = await runner.run({ projectId: "p1", commandId: "p1.test", runId: "r1" });
+
+    expect(result.classification).toBe("execution_error");
+    expect(result.failureSummary).toContain("SIGKILL");
+  });
+
+  it("catches a non-Error throw and returns execution_error", async () => {
+    const registry = makeRegistry([makeCommand()]);
+    const throwingRunner: CommandRunner = {
+      run: async () => {
+        throw "string error TOKEN=leaked";
+      },
+    };
+    const runner = new VerificationRunner({ registry, commandRunner: throwingRunner });
+
+    const result = await runner.run({ projectId: "p1", commandId: "p1.test", runId: "r1" });
+
+    expect(result.classification).toBe("execution_error");
+    expect(result.failureSummary).not.toContain("leaked");
   });
 });
