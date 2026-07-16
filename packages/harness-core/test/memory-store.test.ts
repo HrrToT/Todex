@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MemoryEntry } from "@todex/contracts";
 import { MemoryStore, InMemoryMemoryRepository } from "../src/memory-store.js";
-import { ContextBuilder } from "../src/context-builder.js";
+import { ContextBuilder, EMPTY_MEMORY_CONTEXT, type SelectionReason } from "../src/context-builder.js";
 import type { Clock } from "../src/llm.js";
 
 class FakeClock implements Clock {
@@ -318,5 +318,51 @@ describe("ContextBuilder overflow continuation", () => {
 
     expect(context.entries).toHaveLength(12);
     expect(context.totalCharacters).toBeLessThanOrEqual(4096);
+  });
+});
+
+describe("ContextBuilder container immutability", () => {
+  it("freezes the entries array so callers cannot push", () => {
+    const { store, repository } = makeStore();
+    store.remember(verifiedEntry({ content: "frozen test" }));
+
+    const builder = new ContextBuilder({ repository });
+    const context = builder.build({ projectId: "p1" });
+
+    expect(Object.isFrozen(context.entries)).toBe(true);
+    expect(() => (context.entries as MemoryEntry[]).push(context.entries[0])).toThrow();
+  });
+
+  it("freezes the reasons Map so callers cannot set", () => {
+    const { store, repository } = makeStore();
+    store.remember(verifiedEntry({ content: "frozen reasons" }));
+
+    const builder = new ContextBuilder({ repository });
+    const context = builder.build({ projectId: "p1" });
+
+    expect(Object.isFrozen(context.reasons)).toBe(true);
+    expect(() => (context.reasons as Map<string, SelectionReason>).set("fake-id", "agent_observed")).toThrow();
+  });
+
+  it("freezes EMPTY_MEMORY_CONTEXT entries and reasons", () => {
+    expect(Object.isFrozen(EMPTY_MEMORY_CONTEXT.entries)).toBe(true);
+    expect(Object.isFrozen(EMPTY_MEMORY_CONTEXT.reasons)).toBe(true);
+    expect(() => (EMPTY_MEMORY_CONTEXT.entries as MemoryEntry[]).push({} as MemoryEntry)).toThrow();
+    expect(() => (EMPTY_MEMORY_CONTEXT.reasons as Map<string, SelectionReason>).set("x", "agent_observed")).toThrow();
+  });
+
+  it("does not let mutating one context affect a later context", () => {
+    const { store, repository } = makeStore();
+    store.remember(verifiedEntry({ content: "entry one" }));
+
+    const builder = new ContextBuilder({ repository });
+    const context1 = builder.build({ projectId: "p1" });
+
+    store.remember(verifiedEntry({ content: "entry two" }));
+    const context2 = builder.build({ projectId: "p1" });
+
+    expect(context1.entries).toHaveLength(1);
+    expect(context2.entries).toHaveLength(2);
+    expect(context1.entries[0].content).toBe("entry one");
   });
 });

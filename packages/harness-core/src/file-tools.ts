@@ -4,6 +4,7 @@ import type { PathResolver } from "./guardrail.js";
 import { checkPath, isSensitivePath } from "./guardrail.js";
 import { inspectUnifiedDiff, extractDiffPath } from "./patch-inspector.js";
 import type { MemoryStore } from "./memory-store.js";
+import type { TraceStore } from "./trace-store.js";
 
 export type { PatchMetadata } from "./patch-inspector.js";
 export { inspectUnifiedDiff } from "./patch-inspector.js";
@@ -448,15 +449,18 @@ export class FileTools implements ToolDispatcher {
 export interface HarnessDispatcherDeps {
   readonly fileTools: FileTools;
   readonly memoryStore: MemoryStore;
+  readonly traceStore: TraceStore;
 }
 
 export class HarnessDispatcher implements ToolDispatcher {
   private readonly fileTools: FileTools;
   private readonly memoryStore: MemoryStore;
+  private readonly traceStore: TraceStore;
 
   constructor(deps: HarnessDispatcherDeps) {
     this.fileTools = deps.fileTools;
     this.memoryStore = deps.memoryStore;
+    this.traceStore = deps.traceStore;
   }
 
   async dispatch(
@@ -487,6 +491,18 @@ export class HarnessDispatcher implements ToolDispatcher {
   ): ToolResult {
     if (action.tool !== "remember") {
       return failed(context.actionId, "internal_error");
+    }
+
+    const validEventIds = new Set(
+      this.traceStore.list(context.runId).map((e) => e.eventId),
+    );
+
+    const seen = new Set<string>();
+    for (const id of action.traceEventIds) {
+      if (!validEventIds.has(id) || seen.has(id)) {
+        return failed(context.actionId, "invalid_trace_evidence");
+      }
+      seen.add(id);
     }
 
     try {

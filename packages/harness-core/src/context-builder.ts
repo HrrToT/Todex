@@ -38,11 +38,55 @@ function freezeEntry(entry: MemoryEntry): MemoryEntry {
   return copy;
 }
 
-export const EMPTY_MEMORY_CONTEXT: SelectedMemoryContext = {
-  entries: [],
-  reasons: new Map(),
+class FrozenReasonsMap implements ReadonlyMap<string, SelectionReason> {
+  private readonly backing: Map<string, SelectionReason>;
+
+  constructor(backing: Map<string, SelectionReason>) {
+    this.backing = backing;
+  }
+
+  get size(): number {
+    return this.backing.size;
+  }
+
+  forEach(callback: (value: SelectionReason, key: string, map: ReadonlyMap<string, SelectionReason>) => void): void {
+    this.backing.forEach((v, k) => callback(v, k, this));
+  }
+
+  get(key: string): SelectionReason | undefined {
+    return this.backing.get(key);
+  }
+
+  has(key: string): boolean {
+    return this.backing.has(key);
+  }
+
+  entries(): IterableIterator<[string, SelectionReason]> {
+    return this.backing.entries();
+  }
+
+  keys(): IterableIterator<string> {
+    return this.backing.keys();
+  }
+
+  values(): IterableIterator<SelectionReason> {
+    return this.backing.values();
+  }
+
+  [Symbol.iterator](): IterableIterator<[string, SelectionReason]> {
+    return this.backing[Symbol.iterator]();
+  }
+}
+
+function freezeReasons(map: Map<string, SelectionReason>): ReadonlyMap<string, SelectionReason> {
+  return Object.freeze(new FrozenReasonsMap(map)) as ReadonlyMap<string, SelectionReason>;
+}
+
+export const EMPTY_MEMORY_CONTEXT: SelectedMemoryContext = Object.freeze({
+  entries: Object.freeze([]) as readonly MemoryEntry[],
+  reasons: freezeReasons(new Map<string, SelectionReason>()),
   totalCharacters: 0,
-};
+}) as SelectedMemoryContext;
 
 export class ContextBuilder {
   private readonly repository: MemoryRepository;
@@ -75,6 +119,10 @@ export class ContextBuilder {
       totalCharacters += entry.content.length;
     }
 
-    return { entries, reasons, totalCharacters };
+    return Object.freeze({
+      entries: Object.freeze(entries) as readonly MemoryEntry[],
+      reasons: freezeReasons(reasons),
+      totalCharacters,
+    }) as SelectedMemoryContext;
   }
 }
