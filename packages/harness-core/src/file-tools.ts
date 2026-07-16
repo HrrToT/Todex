@@ -2,6 +2,11 @@ import type { Action, ToolResult } from "@todex/contracts";
 import type { ToolDispatcher } from "./llm.js";
 import type { PathResolver } from "./guardrail.js";
 import { checkPath, isSensitivePath } from "./guardrail.js";
+import { inspectUnifiedDiff, extractDiffPath } from "./patch-inspector.js";
+import type { MemoryStore } from "./memory-store.js";
+
+export type { PatchMetadata } from "./patch-inspector.js";
+export { inspectUnifiedDiff } from "./patch-inspector.js";
 
 export interface SearchMatch {
   readonly path: string;
@@ -15,11 +20,6 @@ export interface WorkspaceFs {
   searchText(path: string, query: string): Promise<readonly SearchMatch[]>;
   snapshot(paths: readonly string[]): Promise<ReadonlyMap<string, string | undefined>>;
   commit(next: ReadonlyMap<string, string | undefined>): Promise<void>;
-}
-
-export interface PatchMetadata {
-  readonly byteLength: number;
-  readonly affectedPaths: readonly string[];
 }
 
 export interface FileToolsDeps {
@@ -85,56 +85,6 @@ function truncateContext(context: string): string {
     return context;
   }
   return context.slice(0, MAX_SEARCH_CONTEXT_CHARS);
-}
-
-function extractDiffPath(header: string): string | null {
-  const trimmed = header.trim();
-  if (trimmed === "/dev/null") return null;
-  if (trimmed.startsWith("b/")) return trimmed.slice(2);
-  if (trimmed.startsWith("a/")) return trimmed.slice(2);
-  return trimmed;
-}
-
-export function inspectUnifiedDiff(patch: string): PatchMetadata | undefined {
-  const lines = patch.split("\n");
-  const affectedPaths: string[] = [];
-  let hasHunk = false;
-  let hasFileHeader = false;
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    if (line.startsWith("--- ")) {
-      if (i + 1 >= lines.length || !lines[i + 1].startsWith("+++ ")) {
-        return undefined;
-      }
-      hasFileHeader = true;
-      const oldPath = extractDiffPath(lines[i].slice(4));
-      const newPath = extractDiffPath(lines[i + 1].slice(4));
-      const path = newPath ?? oldPath;
-      if (path !== null) {
-        affectedPaths.push(path);
-      }
-      i += 2;
-      continue;
-    }
-
-    if (line.startsWith("@@")) {
-      hasHunk = true;
-    }
-
-    i++;
-  }
-
-  if (!hasFileHeader || !hasHunk || affectedPaths.length === 0) {
-    return undefined;
-  }
-
-  return {
-    byteLength: Buffer.byteLength(patch, "utf8"),
-    affectedPaths: [...new Set(affectedPaths)],
-  };
 }
 
 interface ParsedDiffLine {
@@ -219,6 +169,12 @@ function parseUnifiedDiff(patch: string): ParsedDiffFile[] | null {
           i++;
         }
 
+        const contextLineCount = hunkLines.filter((l) => l.type === "context").length;
+        const removeLineCount = hunkLines.filter((l) => l.type === "remove").length;
+        const addLineCount = hunkLines.filter((l) => l.type === "add").length;
+        if (hunkHeader.oldCount !== contextLineCount + removeLineCount) return null;
+        if (hunkHeader.newCount !== contextLineCount + addLineCount) return null;
+
         hunks.push({ ...hunkHeader, lines: hunkLines });
       }
 
@@ -251,6 +207,8 @@ function applyHunks(
     }
   }
 
+  let offset = 0;
+
   for (const hunk of hunks) {
     const oldLines: string[] = [];
     const newLines: string[] = [];
@@ -271,10 +229,11 @@ function applyHunks(
         return { ok: false, result: content };
       }
       lines = [...newLines];
+      offset += newLines.length;
       continue;
     }
 
-    const startPos = hunk.oldStart - 1;
+    const startPos = hunk.oldStart - 1 + offset;
 
     for (let j = 0; j < oldLines.length; j++) {
       if (startPos + j >= lines.length || lines[startPos + j] !== oldLines[j]) {
@@ -287,6 +246,8 @@ function applyHunks(
       ...newLines,
       ...lines.slice(startPos + oldLines.length),
     ];
+
+    offset += newLines.length - oldLines.length;
   }
 
   if (lines.length === 0) {
@@ -309,7 +270,7 @@ export class FileTools implements ToolDispatcher {
 
   async dispatch(
     action: Action,
-    context: { runId: string; actionId: string },
+    context: { runId: string; actionId: string; projectId: string },
   ): Promise<ToolResult> {
     switch (action.tool) {
       case "list_files":
@@ -345,9 +306,8 @@ export class FileTools implements ToolDispatcher {
     let entries: readonly string[];
     try {
       entries = await this.fs.list(action.path, action.maxDepth ?? DEFAULT_MAX_DEPTH);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return failed(context.actionId, `list error: ${message}`);
+    } catch {
+      return failed(context.actionId, "list_failed");
     }
 
     const filtered = entries.filter((p) => !isSensitivePath(p));
@@ -377,9 +337,8 @@ export class FileTools implements ToolDispatcher {
     let content: string;
     try {
       content = await this.fs.readText(action.path);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return failed(context.actionId, `read error: ${message}`);
+    } catch {
+      return failed(context.actionId, "read_failed");
     }
 
     const { text, truncated } = truncateContent(content);
@@ -405,9 +364,8 @@ export class FileTools implements ToolDispatcher {
     let matches: readonly SearchMatch[];
     try {
       matches = await this.fs.searchText(searchPath, action.query);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return failed(context.actionId, `search error: ${message}`);
+    } catch {
+      return failed(context.actionId, "search_failed");
     }
 
     const filtered = matches.filter((m) => !isSensitivePath(m.path));
@@ -452,7 +410,12 @@ export class FileTools implements ToolDispatcher {
     const paths = files
       .map((f) => f.newPath ?? f.oldPath)
       .filter((p): p is string => p !== null);
-    const snapshot = await this.fs.snapshot(paths);
+    let snapshot: ReadonlyMap<string, string | undefined>;
+    try {
+      snapshot = await this.fs.snapshot(paths);
+    } catch {
+      return failed(context.actionId, "snapshot_failed");
+    }
 
     const next = new Map<string, string | undefined>();
     for (const file of files) {
@@ -474,11 +437,76 @@ export class FileTools implements ToolDispatcher {
 
     try {
       await this.fs.commit(next);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return failed(context.actionId, `commit error: ${message}`);
+    } catch {
+      return failed(context.actionId, "commit_failed");
     }
 
     return succeeded(context.actionId, `patch applied: ${files.length} file(s)`);
+  }
+}
+
+export interface HarnessDispatcherDeps {
+  readonly fileTools: FileTools;
+  readonly memoryStore: MemoryStore;
+}
+
+export class HarnessDispatcher implements ToolDispatcher {
+  private readonly fileTools: FileTools;
+  private readonly memoryStore: MemoryStore;
+
+  constructor(deps: HarnessDispatcherDeps) {
+    this.fileTools = deps.fileTools;
+    this.memoryStore = deps.memoryStore;
+  }
+
+  async dispatch(
+    action: Action,
+    context: { runId: string; actionId: string; projectId: string },
+  ): Promise<ToolResult> {
+    switch (action.tool) {
+      case "list_files":
+      case "read_file":
+      case "search_text":
+      case "apply_patch":
+        return this.fileTools.dispatch(action, context);
+      case "remember":
+        return this.handleRemember(action, context);
+      default:
+        return {
+          resultId: makeResultId(context.actionId),
+          actionId: context.actionId,
+          status: "skipped",
+          summary: "unsupported_tool",
+        };
+    }
+  }
+
+  private handleRemember(
+    action: Action,
+    context: { runId: string; actionId: string; projectId: string },
+  ): ToolResult {
+    if (action.tool !== "remember") {
+      return failed(context.actionId, "internal_error");
+    }
+
+    try {
+      this.memoryStore.remember({
+        projectId: context.projectId,
+        kind: action.kind,
+        trustLevel: "agent_observed",
+        content: action.content,
+        sourceTraceIds: [...action.traceEventIds],
+      });
+      return succeeded(context.actionId, `remembered: ${action.kind}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "sensitive_content") {
+        return failed(context.actionId, "sensitive_content");
+      }
+      if (message.startsWith("invalid memory entry")) {
+        return failed(context.actionId, "remember_invalid");
+      }
+      return failed(context.actionId, "remember_failed");
+    }
   }
 }

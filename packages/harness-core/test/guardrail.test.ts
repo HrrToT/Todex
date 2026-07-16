@@ -722,3 +722,48 @@ describe("Guardrail patch classification", () => {
     expect(decision).toMatchObject({ decision: "deny", reason: "sensitive_path" });
   });
 });
+
+describe("Guardrail patch approval without explicit inspector injection", () => {
+  it("requires approval for an 8193-byte patch without injected inspector", () => {
+    const patch = makePatchOfByteLength(8193);
+    expect(Buffer.byteLength(patch, "utf8")).toBe(8193);
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision.decision).toBe("require_approval");
+  });
+
+  it("allows an 8192-byte patch without injected inspector", () => {
+    const patch = makePatchOfByteLength(8192);
+    expect(Buffer.byteLength(patch, "utf8")).toBe(8192);
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision).toMatchObject({ decision: "allow", reason: "safe_action" });
+  });
+
+  it("requires approval for an 11-file patch without injected inspector", () => {
+    const patch = makeMultiFilePatch(11);
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision.decision).toBe("require_approval");
+  });
+
+  it("allows a 10-file patch without injected inspector", () => {
+    const patch = makeMultiFilePatch(10);
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision).toMatchObject({ decision: "allow", reason: "safe_action" });
+  });
+
+  it("denies a sensitive-path patch without injected inspector", () => {
+    const patch = "--- a/.env\n+++ b/.env\n@@ -1 +1 @@\n-old\n+new\n";
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(applyPatch(patch), makeContext());
+    expect(decision).toMatchObject({ decision: "deny", reason: "sensitive_path" });
+  });
+
+  it("allows a malformed diff to reach FileTools without injected inspector", () => {
+    const { guardrail } = makeGuardrail();
+    const decision = guardrail.evaluate(applyPatch("not a diff"), makeContext());
+    expect(decision).toMatchObject({ decision: "allow", reason: "safe_action" });
+  });
+});

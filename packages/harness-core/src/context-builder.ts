@@ -68,7 +68,7 @@ export class ContextBuilder {
 
     for (const entry of sorted) {
       if (entries.length >= MAX_CONTEXT_ENTRIES) break;
-      if (totalCharacters + entry.content.length > MAX_CONTEXT_CHARACTERS) break;
+      if (totalCharacters + entry.content.length > MAX_CONTEXT_CHARACTERS) continue;
       const frozen = freezeEntry(entry);
       entries.push(frozen);
       reasons.set(entry.memoryId, getReason(entry));

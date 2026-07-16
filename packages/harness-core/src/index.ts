@@ -27,8 +27,9 @@ export { InMemoryApprovalStore } from "./approval-store.js";
 export type { InMemoryApprovalStoreOptions } from "./approval-store.js";
 export { RunStateMachine } from "./run-state-machine.js";
 export type { RunState, RunTransition } from "./run-state-machine.js";
-export { FileTools, inspectUnifiedDiff } from "./file-tools.js";
-export type { WorkspaceFs, SearchMatch, PatchMetadata, FileToolsDeps } from "./file-tools.js";
+export { FileTools, HarnessDispatcher } from "./file-tools.js";
+export type { WorkspaceFs, SearchMatch, PatchMetadata, FileToolsDeps, HarnessDispatcherDeps } from "./file-tools.js";
+export { inspectUnifiedDiff, extractDiffPath } from "./patch-inspector.js";
 export {
   normalizePath,
   isWithinWorkspace,

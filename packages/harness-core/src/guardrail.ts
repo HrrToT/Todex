@@ -1,5 +1,6 @@
 import type { Action, ApprovalRequest } from "@todex/contracts";
-import type { PatchMetadata } from "./file-tools.js";
+import type { PatchMetadata } from "./patch-inspector.js";
+import { inspectUnifiedDiff } from "./patch-inspector.js";
 import type {
   Clock,
   GovernanceContext,
@@ -251,14 +252,14 @@ export class Guardrail implements GovernanceController {
   private readonly approvalStore: ApprovalStore;
   private readonly clock: Clock;
   private readonly approvalIdFactory: () => string;
-  private readonly inspectPatch?: (patch: string) => PatchMetadata | undefined;
+  private readonly inspectPatch: (patch: string) => PatchMetadata | undefined;
 
   constructor(deps: GuardrailDeps) {
     this.pathResolver = deps.pathResolver;
     this.approvalStore = deps.approvalStore;
     this.clock = deps.clock;
     this.approvalIdFactory = deps.approvalIdFactory;
-    this.inspectPatch = deps.inspectPatch;
+    this.inspectPatch = deps.inspectPatch ?? inspectUnifiedDiff;
   }
 
   evaluate(action: Action, context: GovernanceContext): GovernanceDecision {
@@ -326,9 +327,6 @@ export class Guardrail implements GovernanceController {
       }
 
       case "apply_patch": {
-        if (!this.inspectPatch) {
-          return { decision: "allow" };
-        }
         const metadata = this.inspectPatch(action.patch);
         if (metadata === undefined) {
           return { decision: "allow" };

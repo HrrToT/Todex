@@ -288,3 +288,35 @@ describe("ContextBuilder seeded secret absence", () => {
     expect(allText).not.toContain("secret-value");
   });
 });
+
+describe("ContextBuilder overflow continuation", () => {
+  it("skips an over-budget entry and includes smaller subsequent entries", () => {
+    const { store, repository } = makeStore();
+    store.remember(verifiedEntry({ kind: "project_profile", content: "x".repeat(5000) }));
+    store.remember(verifiedEntry({ kind: "project_convention", content: "small1" }));
+    store.remember(verifiedEntry({ kind: "project_convention", content: "small2" }));
+
+    const builder = new ContextBuilder({ repository });
+    const context = builder.build({ projectId: "p1" });
+
+    expect(context.entries).toHaveLength(2);
+    const contents = context.entries.map((e) => e.content);
+    expect(contents).toContain("small1");
+    expect(contents).toContain("small2");
+    expect(context.totalCharacters).toBeLessThanOrEqual(4096);
+  });
+
+  it("still respects the 12-entry limit after skipping over-budget entries", () => {
+    const { store, repository } = makeStore();
+    store.remember(verifiedEntry({ kind: "project_profile", content: "x".repeat(5000) }));
+    for (let i = 0; i < 15; i++) {
+      store.remember(verifiedEntry({ kind: "project_convention", content: `entry${i}` }));
+    }
+
+    const builder = new ContextBuilder({ repository });
+    const context = builder.build({ projectId: "p1" });
+
+    expect(context.entries).toHaveLength(12);
+    expect(context.totalCharacters).toBeLessThanOrEqual(4096);
+  });
+});

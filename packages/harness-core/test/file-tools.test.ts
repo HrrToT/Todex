@@ -4,6 +4,8 @@ import type { PathResolver } from "../src/guardrail.js";
 
 class InMemoryWorkspaceFs implements WorkspaceFs {
   private files = new Map<string, string>();
+  public commitCount = 0;
+  public snapshotCount = 0;
 
   setFile(path: string, content: string): void {
     this.files.set(this.normalize(path), content);
@@ -60,6 +62,7 @@ class InMemoryWorkspaceFs implements WorkspaceFs {
   }
 
   async snapshot(paths: readonly string[]): Promise<ReadonlyMap<string, string | undefined>> {
+    this.snapshotCount++;
     const result = new Map<string, string | undefined>();
     for (const p of paths) {
       result.set(p, this.files.get(this.normalize(p)));
@@ -68,6 +71,7 @@ class InMemoryWorkspaceFs implements WorkspaceFs {
   }
 
   async commit(next: ReadonlyMap<string, string | undefined>): Promise<void> {
+    this.commitCount++;
     for (const [path, content] of next) {
       if (content === undefined) {
         this.files.delete(this.normalize(path));
@@ -145,7 +149,7 @@ function makeTools(files: Record<string, string> = {}, workspaceRoot = "/workspa
   return { tools, fs, pathResolver };
 }
 
-const ctx = { runId: "r1", actionId: "a1" };
+const ctx = { runId: "r1", actionId: "a1", projectId: "p1" };
 
 describe("FileTools sensitive path rejection", () => {
   it("rejects reading .env with sensitive_path", async () => {
@@ -434,5 +438,117 @@ describe("FileTools unified diff patches", () => {
     const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
     expect(result.status).toBe("succeeded");
     expect(fs.getFile("new-file.ts")).toBe("new content\n");
+  });
+});
+
+describe("FileTools strict hunk header count validation", () => {
+  it("rejects a hunk where oldCount does not match context+remove lines", async () => {
+    const { tools, fs } = makeTools({ "src/f.ts": "x\n" });
+    const patch = "--- a/src/f.ts\n+++ b/src/f.ts\n@@ -1,999 +1,999 @@\n-x\n+y\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_invalid" });
+    expect(fs.commitCount).toBe(0);
+    expect(fs.getFile("src/f.ts")).toBe("x\n");
+  });
+
+  it("rejects a hunk where newCount does not match context+add lines", async () => {
+    const { tools, fs } = makeTools({ "src/f.ts": "x\n" });
+    const patch = "--- a/src/f.ts\n+++ b/src/f.ts\n@@ -1 +1,999 @@\n-x\n+y\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_invalid" });
+    expect(fs.commitCount).toBe(0);
+    expect(fs.getFile("src/f.ts")).toBe("x\n");
+  });
+
+  it("rejects a hunk where oldCount exceeds actual remove+context lines", async () => {
+    const { tools, fs } = makeTools({ "src/f.ts": "line1\nline2\nline3\n" });
+    const patch = "--- a/src/f.ts\n+++ b/src/f.ts\n@@ -1,5 +1,3 @@\n line1\n line2\n line3\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_invalid" });
+    expect(fs.commitCount).toBe(0);
+    expect(fs.getFile("src/f.ts")).toBe("line1\nline2\nline3\n");
+  });
+});
+
+describe("FileTools multi-hunk offset tracking", () => {
+  it("applies a multi-hunk patch where the first hunk adds lines", async () => {
+    const { tools, fs } = makeTools({ "src/f.ts": "line1\nline2\nline3\nline4\nline5\n" });
+    const patch =
+      "--- a/src/f.ts\n+++ b/src/f.ts\n" +
+      "@@ -1,3 +1,4 @@\n line1\n+inserted\n line2\n line3\n" +
+      "@@ -5,1 +6,1 @@\n-line5\n+modified5\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result.status).toBe("succeeded");
+    expect(fs.getFile("src/f.ts")).toBe("line1\ninserted\nline2\nline3\nline4\nmodified5\n");
+  });
+
+  it("applies a multi-hunk patch where the first hunk deletes lines", async () => {
+    const { tools, fs } = makeTools({ "src/f.ts": "line1\nline2\nline3\nline4\nline5\n" });
+    const patch =
+      "--- a/src/f.ts\n+++ b/src/f.ts\n" +
+      "@@ -1,3 +1,2 @@\n line1\n-line2\n line3\n" +
+      "@@ -4,2 +3,2 @@\n line4\n-line5\n+modified5\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result.status).toBe("succeeded");
+    expect(fs.getFile("src/f.ts")).toBe("line1\nline3\nline4\nmodified5\n");
+  });
+
+  it("does not commit when any hunk in a multi-file patch conflicts", async () => {
+    const { tools, fs } = makeTools({ "a.ts": "before-a\n", "b.ts": "before-b\n" });
+    const patch =
+      "--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-before-a\n+after-a\n" +
+      "--- a/b.ts\n+++ b/b.ts\n@@ -1 +1 @@\n-wrong-content\n+after-b\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_conflict" });
+    expect(fs.commitCount).toBe(0);
+    expect(fs.getFile("a.ts")).toBe("before-a\n");
+    expect(fs.getFile("b.ts")).toBe("before-b\n");
+  });
+
+  it("does not commit when a later hunk in a single-file multi-hunk patch conflicts", async () => {
+    const { tools, fs } = makeTools({ "src/f.ts": "line1\nline2\nline3\nline4\nline5\n" });
+    const patch =
+      "--- a/src/f.ts\n+++ b/src/f.ts\n" +
+      "@@ -1,3 +1,4 @@\n line1\n+inserted\n line2\n line3\n" +
+      "@@ -5,1 +6,1 @@\n-wrong-content\n+modified5\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_conflict" });
+    expect(fs.commitCount).toBe(0);
+    expect(fs.getFile("src/f.ts")).toBe("line1\nline2\nline3\nline4\nline5\n");
+  });
+});
+
+describe("FileTools adapter error sanitization", () => {
+  it("returns snapshot_failed without leaking raw exception content", async () => {
+    const fs = new InMemoryWorkspaceFs();
+    (fs as unknown as { snapshot: () => never }).snapshot = () => {
+      throw new Error("failed to read D:\\secret\\path with secret-value");
+    };
+    fs.setFile("src/f.ts", "x\n");
+    const pathResolver = new FakePathResolver();
+    const tools = new FileTools({ workspaceRoot: "/workspace", fs, pathResolver });
+    const patch = "--- a/src/f.ts\n+++ b/src/f.ts\n@@ -1 +1 @@\n-x\n+y\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result.status).toBe("failed");
+    expect(result.summary).toBe("snapshot_failed");
+    expect(result.summary).not.toContain("secret-value");
+    expect(result.summary).not.toContain("D:\\");
+    expect(fs.commitCount).toBe(0);
+    expect(fs.getFile("src/f.ts")).toBe("x\n");
+  });
+
+  it("returns read_failed without leaking raw exception content", async () => {
+    const fs = new InMemoryWorkspaceFs();
+    (fs as unknown as { readText: () => never }).readText = () => {
+      throw new Error("permission denied: D:\\secret\\secret-value");
+    };
+    fs.setFile("src/f.ts", "x\n");
+    const pathResolver = new FakePathResolver();
+    const tools = new FileTools({ workspaceRoot: "/workspace", fs, pathResolver });
+    const result = await tools.dispatch({ tool: "read_file", path: "src/f.ts" }, ctx);
+    expect(result.status).toBe("failed");
+    expect(result.summary).toBe("read_failed");
+    expect(result.summary).not.toContain("secret-value");
+    expect(result.summary).not.toContain("D:\\");
   });
 });

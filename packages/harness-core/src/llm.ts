@@ -25,7 +25,7 @@ export interface LlmClient {
 export interface ToolDispatcher {
   dispatch(
     action: Action,
-    context: { runId: string; actionId: string },
+    context: { runId: string; actionId: string; projectId: string },
   ): Promise<ToolResult>;
 }
 

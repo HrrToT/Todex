@@ -185,6 +185,7 @@ export class AgentRunner {
       state.pendingAction.action,
       state.runId,
       state.pendingAction.actionId,
+      state.projectId,
     );
     state.results.push(result);
     this.transitionSafely(state, "running");
@@ -323,7 +324,7 @@ export class AgentRunner {
       }
 
       this.transitionSafely(state, "dispatching");
-      const result = await this.dispatchSafely(action, state.runId, actionId);
+      const result = await this.dispatchSafely(action, state.runId, actionId, state.projectId);
       state.results.push(result);
       this.transitionSafely(state, "running");
       this.traceStore.append({
@@ -340,9 +341,10 @@ export class AgentRunner {
     action: Action,
     runId: string,
     actionId: string,
+    projectId: string,
   ): Promise<ToolResult> {
     try {
-      return await this.dispatcher.dispatch(action, { runId, actionId });
+      return await this.dispatcher.dispatch(action, { runId, actionId, projectId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return {
