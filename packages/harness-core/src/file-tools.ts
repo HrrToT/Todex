@@ -164,8 +164,10 @@ function parseUnifiedDiff(patch: string): ParsedDiffFile[] | null {
             hunkLines.push({ type: "add", content: hunkLine.slice(1) });
           } else if (hunkLine.startsWith("\\")) {
             // No newline at end of file marker - skip
-          } else {
+          } else if (hunkLine === "") {
             break;
+          } else {
+            return null;
           }
           i++;
         }
@@ -181,8 +183,10 @@ function parseUnifiedDiff(patch: string): ParsedDiffFile[] | null {
 
       if (hunks.length === 0) return null;
       files.push({ oldPath, newPath, hunks });
-    } else {
+    } else if (line === "") {
       i++;
+    } else {
+      return null;
     }
   }
 

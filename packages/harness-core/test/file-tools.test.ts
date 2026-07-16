@@ -552,3 +552,60 @@ describe("FileTools adapter error sanitization", () => {
     expect(result.summary).not.toContain("D:\\");
   });
 });
+
+describe("FileTools rejects malformed unified diff content", () => {
+  it("rejects trailing garbage after a valid hunk", async () => {
+    const { tools, fs } = makeTools({ "a.ts": "before\n" });
+    const patch =
+      "--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-before\n+after\nINVALID_TRAILING_TEXT\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_invalid" });
+    expect(fs.commitCount).toBe(0);
+    expect(fs.getFile("a.ts")).toBe("before\n");
+  });
+
+  it("rejects an illegal line mixed into a hunk after valid lines", async () => {
+    const { tools, fs } = makeTools({ "a.ts": "line1\nline2\nline3\n" });
+    const patch =
+      "--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,3 @@\n line1\n-line2\n+after\n line3\nINVALID_MID_LINE\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_invalid" });
+    expect(fs.commitCount).toBe(0);
+    expect(fs.getFile("a.ts")).toBe("line1\nline2\nline3\n");
+  });
+
+  it("rejects a multi-file patch when the second file has illegal content", async () => {
+    const { tools, fs } = makeTools({ "a.ts": "before-a\n", "b.ts": "before-b\n" });
+    const patch =
+      "--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-before-a\n+after-a\n" +
+      "--- a/b.ts\n+++ b/b.ts\n@@ -1 +1 @@\n-before-b\n+after-b\nGARBAGE_AFTER_B\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_invalid" });
+    expect(fs.commitCount).toBe(0);
+    expect(fs.getFile("a.ts")).toBe("before-a\n");
+    expect(fs.getFile("b.ts")).toBe("before-b\n");
+  });
+
+  it("rejects garbage at the top level between file headers", async () => {
+    const { tools, fs } = makeTools({ "a.ts": "before\n" });
+    const patch =
+      "GARBAGE_AT_TOP\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-before\n+after\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_invalid" });
+    expect(fs.commitCount).toBe(0);
+    expect(fs.getFile("a.ts")).toBe("before\n");
+  });
+
+  it("rejects garbage between two valid file diffs", async () => {
+    const { tools, fs } = makeTools({ "a.ts": "before-a\n", "b.ts": "before-b\n" });
+    const patch =
+      "--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-before-a\n+after-a\n" +
+      "GARBAGE_BETWEEN_FILES\n" +
+      "--- a/b.ts\n+++ b/b.ts\n@@ -1 +1 @@\n-before-b\n+after-b\n";
+    const result = await tools.dispatch({ tool: "apply_patch", patch }, ctx);
+    expect(result).toMatchObject({ status: "failed", summary: "patch_invalid" });
+    expect(fs.commitCount).toBe(0);
+    expect(fs.getFile("a.ts")).toBe("before-a\n");
+    expect(fs.getFile("b.ts")).toBe("before-b\n");
+  });
+});
