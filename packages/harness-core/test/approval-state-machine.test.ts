@@ -992,3 +992,37 @@ describe("AgentRunner governance integration", () => {
     expect(dispatcher.calls[0].action.tool).toBe("run_shell_command_with_approval");
   });
 });
+
+describe("RunStateMachine verification terminal states", () => {
+  it("allows transition from running to failed_repair_limit", () => {
+    const sm = new RunStateMachine();
+    sm.transition("failed_repair_limit");
+    expect(sm.getCurrentState()).toBe("failed_repair_limit");
+  });
+
+  it("allows transition from running to failed_environment", () => {
+    const sm = new RunStateMachine();
+    sm.transition("failed_environment");
+    expect(sm.getCurrentState()).toBe("failed_environment");
+  });
+
+  it("does not allow any transition from failed_repair_limit", () => {
+    const sm = new RunStateMachine();
+    sm.transition("failed_repair_limit");
+    expect(sm.canTransition("running")).toBe(false);
+    expect(sm.canTransition("completed")).toBe(false);
+    expect(sm.canTransition("cancelled")).toBe(false);
+    expect(sm.canTransition("failed")).toBe(false);
+    expect(() => sm.transition("running")).toThrow("invalid_run_transition");
+  });
+
+  it("does not allow any transition from failed_environment", () => {
+    const sm = new RunStateMachine();
+    sm.transition("failed_environment");
+    expect(sm.canTransition("running")).toBe(false);
+    expect(sm.canTransition("completed")).toBe(false);
+    expect(sm.canTransition("cancelled")).toBe(false);
+    expect(sm.canTransition("failed")).toBe(false);
+    expect(() => sm.transition("running")).toThrow("invalid_run_transition");
+  });
+});

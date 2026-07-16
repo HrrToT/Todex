@@ -5,6 +5,8 @@ export type RunState =
   | "completed"
   | "completed_unverified"
   | "failed"
+  | "failed_repair_limit"
+  | "failed_environment"
   | "cancelled";
 
 const VALID_TRANSITIONS: Record<RunState, readonly RunState[]> = {
@@ -14,6 +16,8 @@ const VALID_TRANSITIONS: Record<RunState, readonly RunState[]> = {
     "completed",
     "completed_unverified",
     "failed",
+    "failed_repair_limit",
+    "failed_environment",
     "cancelled",
   ],
   dispatching: ["running"],
@@ -21,6 +25,8 @@ const VALID_TRANSITIONS: Record<RunState, readonly RunState[]> = {
   completed: [],
   completed_unverified: [],
   failed: [],
+  failed_repair_limit: [],
+  failed_environment: [],
   cancelled: [],
 };
 
