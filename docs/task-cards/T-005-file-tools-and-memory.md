@@ -36,3 +36,10 @@ Stop and report before changing contracts, dependencies, package manifests, CI, 
 3. Run all Task 4 verification commands before the final commits.
 4. Commit implementation separately from evidence; do not start T-006.
 5. Report changed files, red/green output, commits, Dispatcher counts, atomic-conflict proof, seeded-secret absence proof, assumptions, and T-009 deferral.
+
+## Completion Evidence
+
+- Qwen implementation and repair commits: `d256648`, `4f64d43`, `e17a23d`, `ec7267c`, `821a6e4`, `660546e`, `9421249`, `212a331`.
+- Codex ran a specification-compliance review followed by a code-quality/security review. The review repaired fail-open large-patch classification, inactive `remember` dispatch, malformed diff acceptance, unverified/non-factual trace evidence, adapter error leakage, and mutable context containers.
+- Final independent verification: `pnpm.cmd test --run` 269/269; `pnpm.cmd typecheck`, `pnpm.cmd lint`, and `pnpm.cmd build` all exit 0.
+- No P0/P1 remains within T-005's frozen scope. Production SQLite persistence, real filesystem host adapters, and Electron packaging remain T-009 work.

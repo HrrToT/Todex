@@ -17,6 +17,10 @@ This record verifies bounded file tools, strict unified-diff patch application, 
 | `4f64d43` | Strict unified-diff parser, atomic preflight/commit, `patch_invalid`/`patch_conflict`, Guardrail patch metadata thresholds (8192 bytes / 10 files) |
 | `e17a23d` | Project memory: `MemoryRepository` seam, `MemoryStore` with sensitive-content rejection, `ContextBuilder` with 12-entry/4096-char budgets |
 | `ec7267c` | Live memory context: `LlmTurnContext.memory`, `RunnerOptions.contextBuilder`, per-turn snapshot |
+| `821a6e4` | Codex P1/P2 review repairs: default patch inspection, strict multi-hunk application, concrete remember dispatcher, adapter error sanitization, and context budget continuation |
+| `660546e` | Validate remember evidence belongs to the current Run and make context containers runtime-immutable |
+| `9421249` | Restrict remember evidence to `tool_completed` and `verification_completed` traces only |
+| `212a331` | Reject all unrecognized unified-diff content instead of silently ignoring it |
 
 ## Red-green evidence
 
@@ -30,7 +34,7 @@ This record verifies bounded file tools, strict unified-diff patch application, 
 | Task 3 GREEN | Same | 20/20 passed |
 | Task 4 RED | `pnpm.cmd --filter @todex/harness-core test --run agent-runner.test.ts` | 4 failed / 14 passed (18 total) |
 | Task 4 GREEN | Same | 18/18 passed |
-| Full suite | `pnpm.cmd test --run` | 223/223 passed across 8 test files |
+| Codex final full suite | `pnpm.cmd test --run` | 269/269 passed across 8 test files |
 | Type safety | `pnpm.cmd typecheck` | Exit code 0 |
 | Lint | `pnpm.cmd lint` | Exit code 0 |
 | Build | `pnpm.cmd build` | Exit code 0; contracts TypeScript build executed |
@@ -80,10 +84,11 @@ Sensitive paths (`.env`, `.git/config`, `.npmrc`, `*.pem`, `*.key`, `credentials
 - `apply_patch` accepts only non-empty unified diff text. Malformed diffs return `failed: patch_invalid`. Hunk context mismatches return `failed: patch_conflict`. Both are atomic no-ops.
 - Valid multi-file patches are preflighted in memory and committed through a single `WorkspaceFs.commit` call.
 - Patches exceeding 8192 UTF-8 bytes or 10 distinct affected paths require HITL approval before dispatch. Hard-deny path rules take precedence over approval.
+- `HarnessDispatcher` validates every `remember` source ID before `MemoryStore` insertion: it must be unique, belong to the current Run, and identify a `tool_completed` or `verification_completed` event. Requested, approval, rejection, and terminal control-flow traces are not memory evidence.
 - `MemoryStore` rejects `agent_observed` entries without trace IDs (via Zod schema) and sensitive content (via pattern matching) before repository insertion.
 - `MemoryRepository` is project-scoped: `listActive` and `delete` never cross project boundaries.
 - `ContextBuilder` selects at most 12 entries and 4096 content characters, prioritizing verified project facts, then failure resolutions, then remaining verified, then agent observations. Tie-break is `updatedAt` descending then `memoryId` ascending.
-- `ContextBuilder` returns frozen immutable entry copies; callers cannot mutate repository state through aliases.
+- `ContextBuilder` returns frozen immutable entry copies and frozen containers; its reason map holds its backing state in an ECMAScript private field, so callers cannot mutate a later context or the shared empty context through aliases.
 - `AgentRunner` builds a fresh `SelectedMemoryContext` before every `nextAction` call. No builder yields an empty immutable context. Later memory mutations do not leak back into prior LLM turn contexts.
 
 ## T-009 deferral
@@ -96,3 +101,4 @@ T-005 defines only the `MemoryRepository` interface and a deterministic in-memor
 - Sensitive content detection uses conservative pattern matching for credential-like `key=value` pairs and PEM private key blocks. It may produce false positives on non-sensitive text that happens to match; this is safer than false negatives for T-005.
 - The unified-diff parser handles standard `---`/`+++`/`@@` format with `a/`/`b/` prefixes and `/dev/null` for additions/deletions. It does not support `diff --git` extended headers beyond skipping them.
 - New files created by `/dev/null` patches receive a trailing newline by default, consistent with standard unified-diff semantics when no `\ No newline at end of file` marker is present.
+- Codex review found and Qwen repaired four P1 classes after the initial implementation report: optional patch-inspector fail-open, inactive `remember` dispatch, incomplete strict-diff handling, and unverified/non-factual trace evidence. These repairs were independently re-run before this record was updated.

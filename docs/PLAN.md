@@ -322,7 +322,7 @@ Expected: PASS. Add a deletion test proving removed memory is absent from a subs
 Run: `git add packages/harness-core/src/file-tools.ts packages/harness-core/src/memory-store.ts packages/harness-core/src/context-builder.ts packages/harness-core/test`
 Run: `git commit -m "feat: add bounded file tools and project memory"`
 
-实际提交：`d256648`（有界文件工具）、`4f64d43`（严格补丁与审批阈值）、`e17a23d`（项目记忆选择）、`ec7267c`（Runner 记忆上下文集成）。全仓 223/223 测试通过，typecheck、lint、build 均通过。独立复验记录见 [T-005 验证](verification/2026-07-15-t-005-file-tools-memory.md)。
+实际提交：`d256648`（有界文件工具）、`4f64d43`（严格补丁与审批阈值）、`e17a23d`（项目记忆选择）、`ec7267c`（Runner 记忆上下文集成）、`821a6e4`、`660546e`、`9421249`、`212a331`（Codex 审查发现的治理、证据和严格解析修复）。最终独立复验为全仓 269/269 测试通过，typecheck、lint、build 均通过。详见 [T-005 验证](verification/2026-07-15-t-005-file-tools-memory.md)。
 
 ### Task 6: T-006 实现校验器、反馈回灌与限次修复
 
