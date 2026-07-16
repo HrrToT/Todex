@@ -665,6 +665,7 @@ describe("P1-4: VerificationFeedback per-turn immutability", () => {
     let firstClassification = "";
     let firstRepairAttempts = -1;
     let firstRelatedPaths: string[] = [];
+    let mutationThrew = false;
     const llm = new ScriptedMockLlm(
       [
         { tool: "apply_patch", patch: PATCH_1 },
@@ -678,14 +679,18 @@ describe("P1-4: VerificationFeedback per-turn immutability", () => {
             firstClassification = ctx.verification.classification;
             firstRepairAttempts = ctx.verification.repairAttempts;
             firstRelatedPaths = [...ctx.verification.relatedPaths];
-            const v = ctx.verification as unknown as {
-              classification: string;
-              repairAttempts: number;
-              relatedPaths: string[];
-            };
-            v.classification = "passed";
-            v.repairAttempts = 999;
-            v.relatedPaths.push("injected/path.ts");
+            try {
+              const v = ctx.verification as unknown as {
+                classification: string;
+                repairAttempts: number;
+                relatedPaths: string[];
+              };
+              v.classification = "passed";
+              v.repairAttempts = 999;
+              v.relatedPaths.push("injected/path.ts");
+            } catch {
+              mutationThrew = true;
+            }
           }
         },
       },
@@ -714,6 +719,7 @@ describe("P1-4: VerificationFeedback per-turn immutability", () => {
     expect(firstClassification).toBe("test_failure");
     expect(firstRepairAttempts).toBe(0);
     expect(firstRelatedPaths).toContain("src/failing.ts");
+    expect(mutationThrew).toBe(true);
 
     expect(llm.contexts[2].verification?.classification).toBe("test_failure");
     expect(llm.contexts[2].verification?.repairAttempts).toBe(0);
@@ -723,6 +729,7 @@ describe("P1-4: VerificationFeedback per-turn immutability", () => {
 
   it("provides independent passed feedback snapshots; mutation does not affect next turn", async () => {
     let firstClassification = "";
+    let mutationThrew = false;
     const llm = new ScriptedMockLlm(
       [
         { tool: "apply_patch", patch: PATCH_1 },
@@ -733,12 +740,16 @@ describe("P1-4: VerificationFeedback per-turn immutability", () => {
         onTurn: (ctx) => {
           if (ctx.verification && firstClassification === "") {
             firstClassification = ctx.verification.classification;
-            const v = ctx.verification as unknown as {
-              classification: string;
-              relatedPaths: string[];
-            };
-            v.classification = "test_failure";
-            v.relatedPaths.push("injected/path.ts");
+            try {
+              const v = ctx.verification as unknown as {
+                classification: string;
+                relatedPaths: string[];
+              };
+              v.classification = "test_failure";
+              v.relatedPaths.push("injected/path.ts");
+            } catch {
+              mutationThrew = true;
+            }
           }
         },
       },
@@ -764,8 +775,95 @@ describe("P1-4: VerificationFeedback per-turn immutability", () => {
     });
 
     expect(firstClassification).toBe("passed");
+    expect(mutationThrew).toBe(true);
 
     expect(llm.contexts[2].verification?.classification).toBe("passed");
     expect(llm.contexts[2].verification?.relatedPaths).not.toContain("injected/path.ts");
+  });
+});
+
+describe("P1-4 rework: runtime frozen verification feedback", () => {
+  it("freezes failure feedback and relatedPaths in LLM context; mutation throws TypeError", async () => {
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch: PATCH_1 },
+      { tool: "read_file", path: "src/a.ts" },
+      { tool: "finish", summary: "done", completion: "verified" },
+    ]);
+    const commandRunner = new ScriptedCommandRunner([
+      makeExecution("test_failure", { stderr: "src/failing.ts error" }),
+    ]);
+    const verificationRunner = new VerificationRunner({
+      registry: makeRegistry([makeCommand()]),
+      commandRunner,
+    });
+    const { createRunner: make } = makeRunnerWithVerification({
+      verificationRunner,
+      verificationCommandId: "p1.test",
+    });
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-freeze-fail",
+      projectId: "p1",
+      task: "freeze fail test",
+      workspaceRoot: "/workspace",
+    });
+
+    const v = llm.contexts[1].verification;
+    expect(v).toBeDefined();
+    expect(Object.isFrozen(v)).toBe(true);
+    expect(Object.isFrozen(v!.relatedPaths)).toBe(true);
+
+    expect(() => {
+      (v as unknown as { classification: string }).classification = "passed";
+    }).toThrow(TypeError);
+    expect(() => {
+      (v as unknown as { relatedPaths: string[] }).relatedPaths.push("injected.ts");
+    }).toThrow(TypeError);
+
+    expect(llm.contexts[2].verification?.classification).toBe("test_failure");
+    expect(llm.contexts[2].verification?.relatedPaths).not.toContain("injected.ts");
+  });
+
+  it("freezes passed feedback and relatedPaths in LLM context; mutation throws TypeError", async () => {
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch: PATCH_1 },
+      { tool: "read_file", path: "src/a.ts" },
+      { tool: "finish", summary: "done", completion: "verified" },
+    ]);
+    const commandRunner = new ScriptedCommandRunner([
+      makeExecution("success"),
+    ]);
+    const verificationRunner = new VerificationRunner({
+      registry: makeRegistry([makeCommand()]),
+      commandRunner,
+    });
+    const { createRunner: make } = makeRunnerWithVerification({
+      verificationRunner,
+      verificationCommandId: "p1.test",
+    });
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-freeze-pass",
+      projectId: "p1",
+      task: "freeze pass test",
+      workspaceRoot: "/workspace",
+    });
+
+    const v = llm.contexts[1].verification;
+    expect(v).toBeDefined();
+    expect(Object.isFrozen(v)).toBe(true);
+    expect(Object.isFrozen(v!.relatedPaths)).toBe(true);
+
+    expect(() => {
+      (v as unknown as { classification: string }).classification = "test_failure";
+    }).toThrow(TypeError);
+    expect(() => {
+      (v as unknown as { relatedPaths: string[] }).relatedPaths.push("injected.ts");
+    }).toThrow(TypeError);
+
+    expect(llm.contexts[2].verification?.classification).toBe("passed");
+    expect(llm.contexts[2].verification?.relatedPaths).not.toContain("injected.ts");
   });
 });

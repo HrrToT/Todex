@@ -269,15 +269,15 @@ export class AgentRunner {
         trace: this.traceStore.list(state.runId),
         memory,
         verification: state.verificationFeedback
-          ? {
+          ? Object.freeze({
               classification: state.verificationFeedback.classification,
               commandId: state.verificationFeedback.commandId,
               exitCode: state.verificationFeedback.exitCode,
               durationMs: state.verificationFeedback.durationMs,
               failureSummary: state.verificationFeedback.failureSummary,
-              relatedPaths: [...state.verificationFeedback.relatedPaths],
+              relatedPaths: Object.freeze([...state.verificationFeedback.relatedPaths]),
               repairAttempts: state.verificationFeedback.repairAttempts,
-            }
+            })
           : undefined,
       };
 
