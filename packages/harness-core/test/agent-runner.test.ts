@@ -4,10 +4,19 @@ import {
   ScriptedMockLlm,
   Guardrail,
   InMemoryApprovalStore,
+  FileTools,
+  HarnessDispatcher,
+  InMemoryTraceStore,
+  inspectUnifiedDiff,
+  ContextBuilder,
+  InMemoryMemoryRepository,
+  MemoryStore,
   type AgentRunner,
   type LlmTurnContext,
   type ToolDispatcher,
   type Clock,
+  type WorkspaceFs,
+  type SearchMatch,
 } from "../src/index.js";
 import type { PathResolver } from "../src/guardrail.js";
 import type { Action } from "@todex/contracts";
@@ -425,5 +434,1010 @@ describe("AgentRunner dispatcher errors", () => {
       "action_requested",
       "run_completed",
     ]);
+  });
+});
+
+class InMemoryWorkspaceFs implements WorkspaceFs {
+  private files = new Map<string, string>();
+
+  setFile(path: string, content: string): void {
+    this.files.set(this.normalize(path), content);
+  }
+
+  getFile(path: string): string | undefined {
+    return this.files.get(this.normalize(path));
+  }
+
+  async list(path: string, maxDepth: number): Promise<readonly string[]> {
+    const prefix = this.normalize(path);
+    const result: string[] = [];
+    for (const filePath of this.files.keys()) {
+      if (filePath === prefix) continue;
+      let relative: string;
+      if (prefix === ".") {
+        relative = filePath;
+      } else if (filePath.startsWith(prefix + "/")) {
+        relative = filePath.slice(prefix.length + 1);
+      } else {
+        continue;
+      }
+      const depth = relative.includes("/") ? relative.split("/").length - 1 : 0;
+      if (depth <= maxDepth) {
+        result.push(filePath);
+      }
+    }
+    result.sort();
+    return result;
+  }
+
+  async readText(path: string): Promise<string> {
+    const content = this.files.get(this.normalize(path));
+    if (content === undefined) {
+      throw new Error(`file not found: ${path}`);
+    }
+    return content;
+  }
+
+  async searchText(path: string, query: string): Promise<readonly SearchMatch[]> {
+    const prefix = this.normalize(path);
+    const matches: SearchMatch[] = [];
+    for (const [filePath, content] of this.files) {
+      if (prefix === "." || filePath === prefix || filePath.startsWith(prefix + "/")) {
+        const lines = content.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes(query)) {
+            matches.push({ path: filePath, line: i + 1, context: lines[i] });
+          }
+        }
+      }
+    }
+    return matches;
+  }
+
+  async snapshot(paths: readonly string[]): Promise<ReadonlyMap<string, string | undefined>> {
+    const result = new Map<string, string | undefined>();
+    for (const p of paths) {
+      result.set(p, this.files.get(this.normalize(p)));
+    }
+    return result;
+  }
+
+  async commit(next: ReadonlyMap<string, string | undefined>): Promise<void> {
+    for (const [path, content] of next) {
+      if (content === undefined) {
+        this.files.delete(this.normalize(path));
+      } else {
+        this.files.set(this.normalize(path), content);
+      }
+    }
+  }
+
+  private normalize(p: string): string {
+    return p.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
+  }
+}
+
+function makePatchOfByteLength(byteLength: number): string {
+  const header = "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-x\n+y";
+  const padding = "z".repeat(Math.max(0, byteLength - header.length - 1));
+  return header + padding + "\n";
+}
+
+function makeMultiFilePatch(fileCount: number): string {
+  let patch = "";
+  for (let i = 0; i < fileCount; i++) {
+    patch += `--- a/f${i}\n+++ b/f${i}\n@@ -1 +1 @@\n-old${i}\n+new${i}\n`;
+  }
+  return patch;
+}
+
+function makeRunnerWithFileTools(workspaceRoot = "/workspace") {
+  const fs = new InMemoryWorkspaceFs();
+  const pathResolver = new FakePathResolver();
+  const fileTools = new FileTools({ workspaceRoot, fs, pathResolver });
+  const clock = new FakeClock();
+  const store = new InMemoryApprovalStore({
+    clock,
+    idFactory: createMonotonicIdFactory(),
+  });
+  const guardrail = new Guardrail({
+    pathResolver,
+    approvalStore: store,
+    clock,
+    approvalIdFactory: createMonotonicIdFactory(),
+    inspectPatch: inspectUnifiedDiff,
+  });
+  const calls: { action: Action; actionId: string }[] = [];
+  const dispatcher: ToolDispatcher = {
+    dispatch: async (action, ctx) => {
+      calls.push({ action, actionId: ctx.actionId });
+      return fileTools.dispatch(action, ctx);
+    },
+  };
+  return {
+    clock,
+    resolver: pathResolver,
+    store,
+    guardrail,
+    dispatcher,
+    fs,
+    fileTools,
+    calls,
+    createRunner: (llm: ScriptedMockLlm) =>
+      createRunner({
+        llm,
+        dispatcher,
+        governance: guardrail,
+        approvalStore: store,
+        clock,
+      }),
+  };
+}
+
+describe("AgentRunner patch approval", () => {
+  it("pauses an 8193-byte patch before dispatch", async () => {
+    const patch = makePatchOfByteLength(8193);
+    expect(Buffer.byteLength(patch, "utf8")).toBe(8193);
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch },
+    ]);
+    const { calls, createRunner: make } = makeRunnerWithFileTools();
+    const runner = make(llm);
+
+    const result = await runner.run({
+      runId: "r-patch-approval",
+      projectId: "p1",
+      task: "apply large patch",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("awaiting_approval");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("dispatches an 8192-byte patch without approval", async () => {
+    const patch = makePatchOfByteLength(8192);
+    expect(Buffer.byteLength(patch, "utf8")).toBe(8192);
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch },
+      { tool: "finish", summary: "done" },
+    ]);
+    const { calls, createRunner: make } = makeRunnerWithFileTools();
+    const runner = make(llm);
+
+    const result = await runner.run({
+      runId: "r-patch-auto",
+      projectId: "p1",
+      task: "apply small patch",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].action.tool).toBe("apply_patch");
+  });
+});
+
+function makeRunnerWithFileToolsNoInspector(workspaceRoot = "/workspace") {
+  const fs = new InMemoryWorkspaceFs();
+  const pathResolver = new FakePathResolver();
+  const fileTools = new FileTools({ workspaceRoot, fs, pathResolver });
+  const clock = new FakeClock();
+  const store = new InMemoryApprovalStore({
+    clock,
+    idFactory: createMonotonicIdFactory(),
+  });
+  const guardrail = new Guardrail({
+    pathResolver,
+    approvalStore: store,
+    clock,
+    approvalIdFactory: createMonotonicIdFactory(),
+  });
+  const calls: { action: Action; actionId: string }[] = [];
+  const dispatcher: ToolDispatcher = {
+    dispatch: async (action, ctx) => {
+      calls.push({ action, actionId: ctx.actionId });
+      return fileTools.dispatch(action, ctx);
+    },
+  };
+  return {
+    clock,
+    resolver: pathResolver,
+    store,
+    guardrail,
+    dispatcher,
+    fs,
+    fileTools,
+    calls,
+    createRunner: (llm: ScriptedMockLlm) =>
+      createRunner({
+        llm,
+        dispatcher,
+        governance: guardrail,
+        approvalStore: store,
+        clock,
+      }),
+  };
+}
+
+describe("AgentRunner patch approval without explicit inspector", () => {
+  it("pauses an 8193-byte patch before dispatch without injected inspector", async () => {
+    const patch = makePatchOfByteLength(8193);
+    expect(Buffer.byteLength(patch, "utf8")).toBe(8193);
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch },
+    ]);
+    const { calls, createRunner: make } = makeRunnerWithFileToolsNoInspector();
+    const runner = make(llm);
+
+    const result = await runner.run({
+      runId: "r-patch-no-insp",
+      projectId: "p1",
+      task: "apply large patch without inspector",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("awaiting_approval");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("dispatches an 8192-byte patch without injected inspector", async () => {
+    const patch = makePatchOfByteLength(8192);
+    expect(Buffer.byteLength(patch, "utf8")).toBe(8192);
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch },
+      { tool: "finish", summary: "done" },
+    ]);
+    const { calls, createRunner: make } = makeRunnerWithFileToolsNoInspector();
+    const runner = make(llm);
+
+    const result = await runner.run({
+      runId: "r-patch-auto-no-insp",
+      projectId: "p1",
+      task: "apply small patch without inspector",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].action.tool).toBe("apply_patch");
+  });
+
+  it("pauses an 11-file patch before dispatch without injected inspector", async () => {
+    const patch = makeMultiFilePatch(11);
+    const llm = new ScriptedMockLlm([
+      { tool: "apply_patch", patch },
+    ]);
+    const { calls, createRunner: make } = makeRunnerWithFileToolsNoInspector();
+    const runner = make(llm);
+
+    const result = await runner.run({
+      runId: "r-patch-11files-no-insp",
+      projectId: "p1",
+      task: "apply 11-file patch without inspector",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("awaiting_approval");
+    expect(calls).toHaveLength(0);
+  });
+});
+
+function makeRunnerWithMemory(workspaceRoot = "/workspace") {
+  const gov = makeGovernance(workspaceRoot);
+  const dispatcher = fakeDispatcher();
+  const repository = new InMemoryMemoryRepository();
+  const memoryStore = new MemoryStore({
+    repository,
+    clock: gov.clock,
+    memoryIdFactory: createMonotonicIdFactory(),
+  });
+  const contextBuilder = new ContextBuilder({ repository });
+  return {
+    ...gov,
+    dispatcher,
+    repository,
+    memoryStore,
+    contextBuilder,
+    createRunner: (llm: ScriptedMockLlm) =>
+      createRunner({
+        llm,
+        dispatcher,
+        governance: gov.guardrail,
+        approvalStore: gov.store,
+        clock: gov.clock,
+        contextBuilder,
+      }),
+  };
+}
+
+describe("AgentRunner memory context", () => {
+  it("passes project-scoped memory to the LLM", async () => {
+    const { memoryStore, createRunner: make } = makeRunnerWithMemory();
+    memoryStore.remember({
+      projectId: "p1",
+      kind: "project_profile",
+      trustLevel: "verified",
+      content: "p1 profile",
+      sourceTraceIds: [],
+    });
+    const llm = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-mem",
+      projectId: "p1",
+      task: "memory test",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm.contexts[0].memory?.entries).toHaveLength(1);
+    expect(llm.contexts[0].memory?.entries[0].content).toBe("p1 profile");
+  });
+
+  it("provides empty memory context when no builder is configured", async () => {
+    const llm = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const { createRunner: make } = makeRunner();
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-no-mem",
+      projectId: "p1",
+      task: "no memory",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm.contexts[0].memory?.entries).toHaveLength(0);
+    expect(llm.contexts[0].memory?.totalCharacters).toBe(0);
+  });
+
+  it("snapshots memory per turn so later mutations do not leak back", async () => {
+    const { memoryStore, createRunner: make } = makeRunnerWithMemory();
+    const llm = new ScriptedMockLlm(
+      [
+        { tool: "read_file", path: "src/a.ts" },
+        { tool: "finish", summary: "done" },
+      ],
+      {
+        onTurn: (ctx) => {
+          if (ctx.trace.length === 0) {
+            memoryStore.remember({
+              projectId: "p1",
+              kind: "project_profile",
+              trustLevel: "verified",
+              content: "added during run",
+              sourceTraceIds: [],
+            });
+          }
+        },
+      },
+    );
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-mem-snapshot",
+      projectId: "p1",
+      task: "snapshot test",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm.contexts[0].memory?.entries).toHaveLength(0);
+    expect(llm.contexts[1].memory?.entries).toHaveLength(1);
+    expect(llm.contexts[1].memory?.entries[0].content).toBe("added during run");
+  });
+
+  it("isolates memory by project in the LLM context", async () => {
+    const { memoryStore, createRunner: make } = makeRunnerWithMemory();
+    memoryStore.remember({
+      projectId: "p1",
+      kind: "project_profile",
+      trustLevel: "verified",
+      content: "p1 profile",
+      sourceTraceIds: [],
+    });
+    memoryStore.remember({
+      projectId: "p2",
+      kind: "project_profile",
+      trustLevel: "verified",
+      content: "p2 profile",
+      sourceTraceIds: [],
+    });
+    const llm = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+
+    await runner.run({
+      runId: "r-mem-iso",
+      projectId: "p1",
+      task: "isolation test",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm.contexts[0].memory?.entries).toHaveLength(1);
+    expect(llm.contexts[0].memory?.entries[0].content).toBe("p1 profile");
+  });
+});
+
+function makeRunnerWithHarnessDispatcher(workspaceRoot = "/workspace") {
+  const fs = new InMemoryWorkspaceFs();
+  const pathResolver = new FakePathResolver();
+  const fileTools = new FileTools({ workspaceRoot, fs, pathResolver });
+  const clock = new FakeClock();
+  const store = new InMemoryApprovalStore({
+    clock,
+    idFactory: createMonotonicIdFactory(),
+  });
+  const guardrail = new Guardrail({
+    pathResolver,
+    approvalStore: store,
+    clock,
+    approvalIdFactory: createMonotonicIdFactory(),
+  });
+  const repository = new InMemoryMemoryRepository();
+  const memoryStore = new MemoryStore({
+    repository,
+    clock,
+    memoryIdFactory: createMonotonicIdFactory(),
+  });
+  const traceStore = new InMemoryTraceStore();
+  const dispatcher = new HarnessDispatcher({ fileTools, memoryStore, traceStore });
+  const contextBuilder = new ContextBuilder({ repository });
+  return {
+    clock,
+    resolver: pathResolver,
+    store,
+    guardrail,
+    dispatcher,
+    fs,
+    fileTools,
+    repository,
+    memoryStore,
+    traceStore,
+    contextBuilder,
+    createRunner: (llm: ScriptedMockLlm) =>
+      createRunner({
+        llm,
+        dispatcher,
+        governance: guardrail,
+        approvalStore: store,
+        clock,
+        contextBuilder,
+        traceStore,
+      }),
+  };
+}
+
+describe("AgentRunner remember memory integration", () => {
+  it("writes remember to MemoryStore via concrete dispatcher and reuses across runs", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm1 = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "use tabs not spaces",
+        traceEventIds: ["r-rem-1-1"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner1 = make(llm1);
+    await runner1.run({
+      runId: "r-rem-1",
+      projectId: "p1",
+      task: "remember a convention",
+      workspaceRoot: "/workspace",
+    });
+
+    const entries = repository.all();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].projectId).toBe("p1");
+    expect(entries[0].kind).toBe("project_convention");
+    expect(entries[0].trustLevel).toBe("agent_observed");
+    expect(entries[0].content).toBe("use tabs not spaces");
+    expect(entries[0].sourceTraceIds).toEqual(["r-rem-1-1"]);
+
+    const llm2 = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner2 = make(llm2);
+    await runner2.run({
+      runId: "r-rem-2",
+      projectId: "p1",
+      task: "reuse memory",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm2.contexts[0].memory?.entries).toHaveLength(1);
+    expect(llm2.contexts[0].memory?.entries[0].content).toBe("use tabs not spaces");
+  });
+
+  it("does not leak remember across projects", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm1 = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "p1 convention",
+        traceEventIds: ["r-rem-iso-1-1"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner1 = make(llm1);
+    await runner1.run({
+      runId: "r-rem-iso-1",
+      projectId: "p1",
+      task: "remember p1",
+      workspaceRoot: "/workspace",
+    });
+
+    const llm2 = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner2 = make(llm2);
+    await runner2.run({
+      runId: "r-rem-iso-2",
+      projectId: "p2",
+      task: "p2 should not see p1 memory",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm2.contexts[0].memory?.entries).toHaveLength(0);
+    const p1Entries = repository.all().filter((e) => e.projectId === "p1");
+    const p2Entries = repository.all().filter((e) => e.projectId === "p2");
+    expect(p1Entries).toHaveLength(1);
+    expect(p2Entries).toHaveLength(0);
+  });
+
+  it("rejects sensitive remember content without persisting or leaking", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "TOKEN=secret-value",
+        traceEventIds: ["r-rem-secret-1"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    const result = await runner.run({
+      runId: "r-rem-secret",
+      projectId: "p1",
+      task: "remember secret",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("completed");
+
+    expect(repository.all()).toHaveLength(0);
+
+    const allText = JSON.stringify(result.results) + JSON.stringify(result.trace);
+    expect(allText).not.toContain("secret-value");
+
+    const llm2 = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner2 = make(llm2);
+    await runner2.run({
+      runId: "r-rem-secret-2",
+      projectId: "p1",
+      task: "verify no secret",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm2.contexts[0].memory?.entries).toHaveLength(0);
+    const contextText = JSON.stringify(llm2.contexts[0].memory);
+    expect(contextText).not.toContain("secret-value");
+  });
+
+  it("maps remember traceEventIds to MemoryEntry.sourceTraceIds", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "failure_resolution",
+        content: "fixed flaky test by adding wait",
+        traceEventIds: ["r-rem-trace-1"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    await runner.run({
+      runId: "r-rem-trace",
+      projectId: "p1",
+      task: "remember with trace",
+      workspaceRoot: "/workspace",
+    });
+
+    const entries = repository.all();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].sourceTraceIds).toEqual(["r-rem-trace-1"]);
+  });
+
+  it("rejects agent_observed remember without trace IDs", async () => {
+    const { repository, createRunner: make } = makeRunnerWithHarnessDispatcher();
+
+    const llm = new ScriptedMockLlm([
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "no trace evidence",
+        traceEventIds: [],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    await runner.run({
+      runId: "r-rem-no-trace",
+      projectId: "p1",
+      task: "remember without trace",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(repository.all()).toHaveLength(0);
+  });
+});
+
+describe("AgentRunner remember trace evidence validation", () => {
+  it("rejects a forged trace ID that does not exist in the current run", async () => {
+    const { repository, createRunner: make } = makeRunnerWithHarnessDispatcher();
+
+    const llm = new ScriptedMockLlm([
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "forged evidence",
+        traceEventIds: ["invented-trace-id"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    const result = await runner.run({
+      runId: "r-forged",
+      projectId: "p1",
+      task: "forge trace",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.results[0].status).toBe("failed");
+    expect(result.results[0].summary).toBe("invalid_trace_evidence");
+
+    expect(repository.all()).toHaveLength(0);
+
+    const llm2 = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner2 = make(llm2);
+    await runner2.run({
+      runId: "r-forged-2",
+      projectId: "p1",
+      task: "verify no memory",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm2.contexts[0].memory?.entries).toHaveLength(0);
+  });
+
+  it("rejects a cross-run trace ID that belongs to a different run", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm1 = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner1 = make(llm1);
+    await runner1.run({
+      runId: "r-cross-1",
+      projectId: "p1",
+      task: "generate trace",
+      workspaceRoot: "/workspace",
+    });
+
+    const llm2 = new ScriptedMockLlm([
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "cross-run evidence",
+        traceEventIds: ["r-cross-1-0"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner2 = make(llm2);
+    const result = await runner2.run({
+      runId: "r-cross-2",
+      projectId: "p1",
+      task: "use other run trace",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.results[0].status).toBe("failed");
+    expect(result.results[0].summary).toBe("invalid_trace_evidence");
+    expect(repository.all()).toHaveLength(0);
+  });
+
+  it("accepts a current-run real trace ID and persists for cross-run reuse", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm1 = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "failure_resolution",
+        content: "fixed flaky test by adding wait",
+        traceEventIds: ["r-real-1-1"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner1 = make(llm1);
+    await runner1.run({
+      runId: "r-real-1",
+      projectId: "p1",
+      task: "real trace evidence",
+      workspaceRoot: "/workspace",
+    });
+
+    const entries = repository.all();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].sourceTraceIds).toEqual(["r-real-1-1"]);
+
+    const llm2 = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner2 = make(llm2);
+    await runner2.run({
+      runId: "r-real-2",
+      projectId: "p1",
+      task: "reuse real memory",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(llm2.contexts[0].memory?.entries).toHaveLength(1);
+    expect(llm2.contexts[0].memory?.entries[0].content).toBe("fixed flaky test by adding wait");
+  });
+
+  it("rejects when any one trace ID among multiple is invalid", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "mixed evidence",
+        traceEventIds: ["r-mixed-0", "forged-id"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    const result = await runner.run({
+      runId: "r-mixed",
+      projectId: "p1",
+      task: "mixed trace",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.results[1].status).toBe("failed");
+    expect(result.results[1].summary).toBe("invalid_trace_evidence");
+    expect(repository.all()).toHaveLength(0);
+  });
+
+  it("rejects duplicate trace IDs", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "duplicate evidence",
+        traceEventIds: ["r-dup-0", "r-dup-0"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    const result = await runner.run({
+      runId: "r-dup",
+      projectId: "p1",
+      task: "duplicate trace",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.results[1].status).toBe("failed");
+    expect(result.results[1].summary).toBe("invalid_trace_evidence");
+    expect(repository.all()).toHaveLength(0);
+  });
+});
+
+describe("AgentRunner remember factual trace type validation", () => {
+  it("rejects remember referencing its own action_requested as first action", async () => {
+    const { repository, createRunner: make } = makeRunnerWithHarnessDispatcher();
+
+    const llm = new ScriptedMockLlm([
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "self action_requested evidence",
+        traceEventIds: ["r-self-req-0"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    const result = await runner.run({
+      runId: "r-self-req",
+      projectId: "p1",
+      task: "self action_requested",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.results[0].status).toBe("failed");
+    expect(result.results[0].summary).toBe("invalid_trace_evidence");
+    expect(repository.all()).toHaveLength(0);
+
+    const llm2 = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner2 = make(llm2);
+    await runner2.run({
+      runId: "r-self-req-2",
+      projectId: "p1",
+      task: "verify empty",
+      workspaceRoot: "/workspace",
+    });
+    expect(llm2.contexts[0].memory?.entries).toHaveLength(0);
+  });
+
+  it("rejects remember referencing a prior action_requested even from a real tool", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "action_requested evidence",
+        traceEventIds: ["r-act-req-0"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    const result = await runner.run({
+      runId: "r-act-req",
+      projectId: "p1",
+      task: "action_requested evidence",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.results[1].status).toBe("failed");
+    expect(result.results[1].summary).toBe("invalid_trace_evidence");
+    expect(repository.all()).toHaveLength(0);
+  });
+
+  it("accepts remember referencing a prior tool_completed", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "tool_completed evidence",
+        traceEventIds: ["r-tool-comp-1"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    await runner.run({
+      runId: "r-tool-comp",
+      projectId: "p1",
+      task: "tool_completed evidence",
+      workspaceRoot: "/workspace",
+    });
+
+    const entries = repository.all();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].sourceTraceIds).toEqual(["r-tool-comp-1"]);
+
+    const llm2 = new ScriptedMockLlm([
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner2 = make(llm2);
+    await runner2.run({
+      runId: "r-tool-comp-2",
+      projectId: "p1",
+      task: "reuse",
+      workspaceRoot: "/workspace",
+    });
+    expect(llm2.contexts[0].memory?.entries).toHaveLength(1);
+    expect(llm2.contexts[0].memory?.entries[0].content).toBe("tool_completed evidence");
+  });
+
+  it("accepts remember referencing a verification_completed trace", async () => {
+    const { repository, fs, traceStore, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm(
+      [
+        { tool: "read_file", path: "src/a.ts" },
+        {
+          tool: "remember",
+          kind: "project_convention",
+          content: "verification evidence",
+          traceEventIds: ["r-verif-2"],
+        },
+        { tool: "finish", summary: "done" },
+      ],
+      {
+        onTurn: (ctx) => {
+          if (ctx.trace.length === 2) {
+            traceStore.append({
+              runId: "r-verif",
+              type: "verification_completed",
+              payloadSummary: "tests passed",
+            });
+          }
+        },
+      },
+    );
+    const runner = make(llm);
+    await runner.run({
+      runId: "r-verif",
+      projectId: "p1",
+      task: "verification evidence",
+      workspaceRoot: "/workspace",
+    });
+
+    const entries = repository.all();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].sourceTraceIds).toEqual(["r-verif-2"]);
+  });
+
+  it("rejects mixed tool_completed and action_requested IDs entirely", async () => {
+    const { repository, fs, createRunner: make } = makeRunnerWithHarnessDispatcher();
+    fs.setFile("src/a.ts", "content");
+
+    const llm = new ScriptedMockLlm([
+      { tool: "read_file", path: "src/a.ts" },
+      {
+        tool: "remember",
+        kind: "project_convention",
+        content: "mixed type evidence",
+        traceEventIds: ["r-mixed-type-1", "r-mixed-type-0"],
+      },
+      { tool: "finish", summary: "done" },
+    ]);
+    const runner = make(llm);
+    const result = await runner.run({
+      runId: "r-mixed-type",
+      projectId: "p1",
+      task: "mixed type",
+      workspaceRoot: "/workspace",
+    });
+
+    expect(result.results[1].status).toBe("failed");
+    expect(result.results[1].summary).toBe("invalid_trace_evidence");
+    expect(repository.all()).toHaveLength(0);
   });
 });

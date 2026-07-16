@@ -6,6 +6,7 @@ import type {
   ToolResult,
   TraceEvent,
 } from "@todex/contracts";
+import type { SelectedMemoryContext } from "./context-builder.js";
 
 export interface LlmTurnContext {
   readonly runId: string;
@@ -14,6 +15,7 @@ export interface LlmTurnContext {
   readonly workspaceRoot: string;
   readonly previousResults: readonly ToolResult[];
   readonly trace: readonly TraceEvent[];
+  readonly memory?: SelectedMemoryContext;
 }
 
 export interface LlmClient {
@@ -23,7 +25,7 @@ export interface LlmClient {
 export interface ToolDispatcher {
   dispatch(
     action: Action,
-    context: { runId: string; actionId: string },
+    context: { runId: string; actionId: string; projectId: string },
   ): Promise<ToolResult>;
 }
 

@@ -27,3 +27,17 @@ export { InMemoryApprovalStore } from "./approval-store.js";
 export type { InMemoryApprovalStoreOptions } from "./approval-store.js";
 export { RunStateMachine } from "./run-state-machine.js";
 export type { RunState, RunTransition } from "./run-state-machine.js";
+export { FileTools, HarnessDispatcher } from "./file-tools.js";
+export type { WorkspaceFs, SearchMatch, PatchMetadata, FileToolsDeps, HarnessDispatcherDeps } from "./file-tools.js";
+export { inspectUnifiedDiff, extractDiffPath } from "./patch-inspector.js";
+export {
+  normalizePath,
+  isWithinWorkspace,
+  getRelativePath,
+  isSensitivePath,
+  checkPath,
+} from "./guardrail.js";
+export { MemoryStore, InMemoryMemoryRepository, isSensitiveContent } from "./memory-store.js";
+export type { MemoryRepository, MemoryStoreDeps } from "./memory-store.js";
+export { ContextBuilder, EMPTY_MEMORY_CONTEXT } from "./context-builder.js";
+export type { SelectedMemoryContext, ContextBuilderDeps, SelectionReason } from "./context-builder.js";

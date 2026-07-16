@@ -15,6 +15,8 @@ import type {
 import type { TraceStore } from "./trace-store.js";
 import { InMemoryTraceStore } from "./trace-store.js";
 import { RunStateMachine } from "./run-state-machine.js";
+import type { ContextBuilder } from "./context-builder.js";
+import { EMPTY_MEMORY_CONTEXT } from "./context-builder.js";
 
 const DEFAULT_MAX_STEPS = 50;
 
@@ -25,6 +27,7 @@ export interface RunnerOptions {
   readonly approvalStore: ApprovalStore;
   readonly clock: Clock;
   readonly traceStore?: TraceStore;
+  readonly contextBuilder?: ContextBuilder;
 }
 
 interface PendingAction {
@@ -73,6 +76,7 @@ export class AgentRunner {
   private readonly approvalStore: ApprovalStore;
   private readonly clock: Clock;
   private readonly traceStore: TraceStore;
+  private readonly contextBuilder?: ContextBuilder;
   private readonly cancelledRuns = new Set<string>();
   private readonly runStates = new Map<string, RunState>();
 
@@ -83,6 +87,7 @@ export class AgentRunner {
     this.approvalStore = options.approvalStore;
     this.clock = options.clock;
     this.traceStore = options.traceStore ?? new InMemoryTraceStore();
+    this.contextBuilder = options.contextBuilder;
   }
 
   cancel(runId: string): void {
@@ -180,6 +185,7 @@ export class AgentRunner {
       state.pendingAction.action,
       state.runId,
       state.pendingAction.actionId,
+      state.projectId,
     );
     state.results.push(result);
     this.transitionSafely(state, "running");
@@ -215,6 +221,7 @@ export class AgentRunner {
         return this.buildResult(state, "failed", "max_steps_exceeded");
       }
 
+      const memory = this.contextBuilder?.build({ projectId: state.projectId }) ?? EMPTY_MEMORY_CONTEXT;
       const context: LlmTurnContext = {
         runId: state.runId,
         projectId: state.projectId,
@@ -222,6 +229,7 @@ export class AgentRunner {
         workspaceRoot: state.workspaceRoot,
         previousResults: [...state.results],
         trace: this.traceStore.list(state.runId),
+        memory,
       };
 
       let raw: unknown;
@@ -316,7 +324,7 @@ export class AgentRunner {
       }
 
       this.transitionSafely(state, "dispatching");
-      const result = await this.dispatchSafely(action, state.runId, actionId);
+      const result = await this.dispatchSafely(action, state.runId, actionId, state.projectId);
       state.results.push(result);
       this.transitionSafely(state, "running");
       this.traceStore.append({
@@ -333,9 +341,10 @@ export class AgentRunner {
     action: Action,
     runId: string,
     actionId: string,
+    projectId: string,
   ): Promise<ToolResult> {
     try {
-      return await this.dispatcher.dispatch(action, { runId, actionId });
+      return await this.dispatcher.dispatch(action, { runId, actionId, projectId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return {

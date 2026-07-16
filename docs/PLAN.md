@@ -282,6 +282,8 @@ Run: `git commit -m "feat: add governance and HITL state machine"`
 **依赖：** T-003、T-004。
 **建议责任：** Qwen，可独立完成。
 
+冻结设计与逐步实施计划：[T-005 设计](superpowers/specs/2026-07-15-t-005-file-tools-memory-design.md)、[T-005 实施计划](superpowers/plans/2026-07-15-t-005-file-tools-memory.md)、[Qwen 任务卡](task-cards/T-005-file-tools-and-memory.md)。SQLite 的真实持久化、应用数据目录和 Electron 原生模块打包保留给 T-009；T-005 只实现可注入的记忆仓储边界与确定性 fake。
+
 **Files:**
 - Create: `packages/harness-core/src/file-tools.ts`
 - Create: `packages/harness-core/src/memory-store.ts`
@@ -289,7 +291,7 @@ Run: `git commit -m "feat: add governance and HITL state machine"`
 - Create: `packages/harness-core/test/file-tools.test.ts`
 - Create: `packages/harness-core/test/memory-store.test.ts`
 
-- [ ] **Step 1: Write failing file and memory tests**
+- [x] **Step 1: Write failing file and memory tests**
 
 ```ts
 it("does not expose content from a sensitive file", async () => {
@@ -301,24 +303,26 @@ it("requires trace evidence for agent-observed memory", () => {
 });
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `pnpm --filter @todex/harness-core test --run file-tools.test.ts memory-store.test.ts`
 Expected: FAIL because tools and memory store are absent.
 
-- [ ] **Step 3: Implement bounded tools and memory selection**
+- [x] **Step 3: Implement bounded tools and memory selection**
 
 Implement list/read/search/applyPatch against injected filesystem adapters, redact sensitive values from `ToolResult`, and implement `MemoryStore` with `verified` and `agent_observed` trust. `ContextBuilder` must choose at most 12 entries and 4096 characters, prioritizing verified project facts and current verification context.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
 Run: `pnpm --filter @todex/harness-core test --run file-tools.test.ts memory-store.test.ts`
 Expected: PASS. Add a deletion test proving removed memory is absent from a subsequent context.
 
-- [ ] **Step 5: Commit and record**
+- [x] **Step 5: Commit and record**
 
 Run: `git add packages/harness-core/src/file-tools.ts packages/harness-core/src/memory-store.ts packages/harness-core/src/context-builder.ts packages/harness-core/test`
 Run: `git commit -m "feat: add bounded file tools and project memory"`
+
+实际提交：`d256648`（有界文件工具）、`4f64d43`（严格补丁与审批阈值）、`e17a23d`（项目记忆选择）、`ec7267c`（Runner 记忆上下文集成）、`821a6e4`、`660546e`、`9421249`、`212a331`（Codex 审查发现的治理、证据和严格解析修复）。最终独立复验为全仓 269/269 测试通过，typecheck、lint、build 均通过。详见 [T-005 验证](verification/2026-07-15-t-005-file-tools-memory.md)。
 
 ### Task 6: T-006 实现校验器、反馈回灌与限次修复
 
