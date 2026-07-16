@@ -187,10 +187,8 @@ function makeRunnerWithVerification(options: {
   };
 }
 
-function getVerification(ctx: LlmTurnContext): LlmTurnContext["verification"] {
-  return (ctx as unknown as { verification?: unknown }).verification as
-    | { classification: string; repairAttempts: number }
-    | undefined;
+function getVerification(ctx: LlmTurnContext): { classification: string; repairAttempts: number } | undefined {
+  return ctx.verification;
 }
 
 const PATCH_1 = "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-x\n+y\n";
