@@ -16,7 +16,7 @@ This record verifies the injected, read-only `ProjectDetector` that recognizes N
 | `830f32d` | `feat: add safe Node project detection` — `ProjectMetadataReader`, `DetectedCommandCandidate`, `DetectedProjectProfile`, `ProjectDetector` with Node rules, package-manager precedence, malformed JSON notices, immutable snapshots; public exports in `index.ts` |
 | `ddc570d` | `feat: add Python project detection` — bounded textual marker regexes for pytest/ruff/mypy, `pytest.ini` presence rule, requirements-only no-guess notice, mixed-project kinds, per-file read-failure degradation with no content leakage |
 | `b41ac16` | `test: add Node and Python detector examples` — `examples/node-bug-repo` and `examples/python-bug-repo` with intentional arithmetic defects, detector-fixture assertions for all four Node candidates and the Python pytest candidate |
-| `f68a043` | `fix: P1-1/P1-2 Codex spec review rework` — lockfile read failure fail-closed (P1-1), no script name echo in notices (P1-2), documentation type-fact correction (P2) |
+| `dfc41cce92363145bca5150aa6f1c66d548be295` | `fix: P1-1/P1-2 Codex spec review rework` — lockfile read failure fail-closed (P1-1), no script name echo in notices (P1-2), documentation type-fact correction (P2) |
 
 ## Red-green evidence
 
