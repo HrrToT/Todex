@@ -226,3 +226,158 @@ describe("ProjectDetector immutable snapshots", () => {
     }).toThrow(TypeError);
   });
 });
+
+describe("ProjectDetector Python candidate discovery", () => {
+  it("detects pytest, ruff, and mypy only from explicit Python markers", () => {
+    const profile = new ProjectDetector(
+      fakeReader({
+        "pyproject.toml": "[tool.pytest.ini_options]\n[tool.ruff]\n[tool.mypy]\n",
+      }),
+    ).detect();
+    expect(profile).toMatchObject({
+      kinds: ["python"],
+      candidates: [
+        { candidateId: "python.pytest", argv: ["python", "-m", "pytest"] },
+        { candidateId: "python.ruff", argv: ["python", "-m", "ruff", "check", "."] },
+        { candidateId: "python.mypy", argv: ["python", "-m", "mypy", "."] },
+      ],
+    });
+  });
+
+  it("detects pytest from pytest.ini presence", () => {
+    const profile = new ProjectDetector(
+      fakeReader({ "pytest.ini": "[pytest]\ntestpaths = tests\n" }),
+    ).detect();
+    expect(profile.kinds).toEqual(["python"]);
+    expect(profile.candidates.map((c) => c.candidateId)).toEqual(["python.pytest"]);
+  });
+
+  it("detects pytest and ruff from requirements.txt markers", () => {
+    const profile = new ProjectDetector(
+      fakeReader({ "requirements.txt": "pytest==8.0\nruff==0.6.0\n" }),
+    ).detect();
+    expect(profile.kinds).toEqual(["python"]);
+    expect(profile.candidates.map((c) => c.candidateId)).toEqual([
+      "python.pytest",
+      "python.ruff",
+    ]);
+  });
+
+  it("detects mypy from requirements.txt marker", () => {
+    const profile = new ProjectDetector(
+      fakeReader({ "requirements.txt": "mypy==1.11.0\n" }),
+    ).detect();
+    expect(profile.candidates.map((c) => c.candidateId)).toEqual(["python.mypy"]);
+  });
+
+  it("does not duplicate candidates when a tool is declared in multiple files", () => {
+    const profile = new ProjectDetector(
+      fakeReader({
+        "pyproject.toml": "[tool.pytest.ini_options]\n",
+        "pytest.ini": "[pytest]\n",
+        "requirements.txt": "pytest==8.0\n",
+      }),
+    ).detect();
+    const pytestCandidates = profile.candidates.filter(
+      (c) => c.candidateId === "python.pytest",
+    );
+    expect(pytestCandidates).toHaveLength(1);
+  });
+
+  it("does not guess Python commands from requirements alone", () => {
+    const profile = new ProjectDetector(
+      fakeReader({ "requirements.txt": "requests==2.0\nflask==1.0\n" }),
+    ).detect();
+    expect(profile.kinds).toEqual(["python"]);
+    expect(profile.candidates).toEqual([]);
+    expect(profile.notices).toContain(
+      "python project detected but no supported verification command was found",
+    );
+  });
+
+  it("includes purpose, workingDirectory, timeoutMs, and reason in Python candidates", () => {
+    const profile = new ProjectDetector(
+      fakeReader({ "pytest.ini": "[pytest]\n" }),
+    ).detect();
+    expect(profile.candidates[0]).toMatchObject({
+      candidateId: "python.pytest",
+      purpose: "test",
+      argv: ["python", "-m", "pytest"],
+      workingDirectory: ".",
+      timeoutMs: 120_000,
+      confirmedByUser: false,
+    });
+  });
+});
+
+describe("ProjectDetector mixed repositories", () => {
+  it("detects a mixed repository and does not guess Python commands from requirements alone", () => {
+    const profile = new ProjectDetector(
+      fakeReader({
+        "package.json": JSON.stringify({ scripts: { test: "node --test" } }),
+        "requirements.txt": "requests==2.0\n",
+      }),
+    ).detect();
+    expect(profile.kinds).toEqual(["node", "python"]);
+    expect(profile.candidates.map((c) => c.candidateId)).toEqual(["node.test"]);
+  });
+
+  it("detects a mixed Node and Python repository with candidates from both", () => {
+    const profile = new ProjectDetector(
+      fakeReader({
+        "package.json": JSON.stringify({ scripts: { test: "x", lint: "y" } }),
+        "pyproject.toml": "[tool.pytest.ini_options]\n[tool.ruff]\n",
+      }),
+    ).detect();
+    expect(profile.kinds).toEqual(["node", "python"]);
+    expect(profile.candidates.map((c) => c.candidateId)).toEqual([
+      "node.test",
+      "node.lint",
+      "python.pytest",
+      "python.ruff",
+    ]);
+  });
+});
+
+describe("ProjectDetector Python metadata degradation", () => {
+  it("keeps Node detection when a Python metadata read throws", () => {
+    const reader = fakeReader({
+      "package.json": JSON.stringify({ scripts: { test: "x" } }),
+    });
+    reader.throwOn("pyproject.toml", new Error("host path must stay private"));
+    const profile = new ProjectDetector(reader).detect();
+    expect(profile.candidates[0]?.candidateId).toBe("node.test");
+    expect(profile.notices).toContain("pyproject.toml could not be read");
+    expect(JSON.stringify(profile)).not.toContain("host path");
+  });
+
+  it("continues Python detection from requirements.txt when pyproject.toml throws", () => {
+    const reader = fakeReader({ "requirements.txt": "pytest==8.0\n" });
+    reader.throwOn("pyproject.toml", new Error("D:\\secret\\path"));
+    const profile = new ProjectDetector(reader).detect();
+    expect(profile.kinds).toEqual(["python"]);
+    expect(profile.candidates.map((c) => c.candidateId)).toEqual(["python.pytest"]);
+    expect(profile.notices).toContain("pyproject.toml could not be read");
+    expect(JSON.stringify(profile)).not.toContain("D:\\");
+  });
+
+  it("does not leak raw error content when pytest.ini read throws", () => {
+    const reader = fakeReader({ "pyproject.toml": "[tool.ruff]\n" });
+    reader.throwOn("pytest.ini", new Error("permission denied TOKEN=secret-value"));
+    const profile = new ProjectDetector(reader).detect();
+    expect(profile.kinds).toEqual(["python"]);
+    expect(profile.candidates.map((c) => c.candidateId)).toEqual(["python.ruff"]);
+    expect(profile.notices).toContain("pytest.ini could not be read");
+    expect(JSON.stringify(profile)).not.toContain("secret-value");
+    expect(JSON.stringify(profile)).not.toContain("permission denied");
+  });
+
+  it("does not leak raw error content when requirements.txt read throws", () => {
+    const reader = fakeReader({ "pytest.ini": "[pytest]\n" });
+    reader.throwOn("requirements.txt", new Error("io error /home/user/secret"));
+    const profile = new ProjectDetector(reader).detect();
+    expect(profile.candidates.map((c) => c.candidateId)).toEqual(["python.pytest"]);
+    expect(profile.notices).toContain("requirements.txt could not be read");
+    expect(JSON.stringify(profile)).not.toContain("/home/user");
+  });
+});

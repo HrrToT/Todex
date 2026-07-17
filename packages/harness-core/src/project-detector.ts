@@ -29,6 +29,10 @@ const NODE_SCRIPT_RULES = [
 
 const RECOGNIZED_NODE_SCRIPTS = new Set(["test", "lint", "typecheck", "build"]);
 
+const PYTEST_MARKER = /\[tool\.pytest(?:\.ini_options)?\]|\[pytest\]|(?:^|\s)pytest(?:[<>=!~\s]|$)/im;
+const RUFF_MARKER = /\[tool\.ruff\]|(?:^|\s)ruff(?:[<>=!~\s]|$)/im;
+const MYPY_MARKER = /\[tool\.mypy\]|(?:^|\s)mypy(?:[<>=!~\s]|$)/im;
+
 function createCandidate(
   candidateId: string,
   purpose: "test" | "lint" | "typecheck" | "build",
@@ -55,6 +59,7 @@ export class ProjectDetector {
     const notices: string[] = [];
 
     this.detectNode(kinds, candidates, notices);
+    this.detectPython(kinds, candidates, notices);
 
     return Object.freeze({
       kinds: Object.freeze(kinds),
@@ -131,6 +136,83 @@ export class ProjectDetector {
       notices.push(
         `package.json scripts not used as verification candidates: ${ignored.join(", ")}`,
       );
+    }
+  }
+
+  private detectPython(
+    kinds: ProjectKind[],
+    candidates: DetectedCommandCandidate[],
+    notices: string[],
+  ): void {
+    const pyprojectText = this.safeReadText("pyproject.toml", notices);
+    const pytestIniText = this.safeReadText("pytest.ini", notices);
+    const requirementsText = this.safeReadText("requirements.txt", notices);
+
+    const hasPyproject = pyprojectText !== undefined;
+    const hasPytestIni = pytestIniText !== undefined;
+    const hasRequirements = requirementsText !== undefined;
+
+    if (!hasPyproject && !hasPytestIni && !hasRequirements) return;
+
+    kinds.push("python");
+
+    const hasPytestEvidence =
+      hasPytestIni ||
+      (pyprojectText !== undefined && PYTEST_MARKER.test(pyprojectText)) ||
+      (requirementsText !== undefined && PYTEST_MARKER.test(requirementsText));
+
+    const hasRuffEvidence =
+      (pyprojectText !== undefined && RUFF_MARKER.test(pyprojectText)) ||
+      (requirementsText !== undefined && RUFF_MARKER.test(requirementsText));
+
+    const hasMypyEvidence =
+      (pyprojectText !== undefined && MYPY_MARKER.test(pyprojectText)) ||
+      (requirementsText !== undefined && MYPY_MARKER.test(requirementsText));
+
+    if (hasPytestEvidence) {
+      candidates.push(
+        createCandidate(
+          "python.pytest",
+          "test",
+          ["python", "-m", "pytest"],
+          "python pytest marker found",
+        ),
+      );
+    }
+    if (hasRuffEvidence) {
+      candidates.push(
+        createCandidate(
+          "python.ruff",
+          "lint",
+          ["python", "-m", "ruff", "check", "."],
+          "python ruff marker found",
+        ),
+      );
+    }
+    if (hasMypyEvidence) {
+      candidates.push(
+        createCandidate(
+          "python.mypy",
+          "typecheck",
+          ["python", "-m", "mypy", "."],
+          "python mypy marker found",
+        ),
+      );
+    }
+
+    if (!hasPytestEvidence && !hasRuffEvidence && !hasMypyEvidence) {
+      notices.push(
+        "python project detected but no supported verification command was found",
+      );
+    }
+  }
+
+  private safeReadText(relativePath: string, notices: string[]): string | undefined {
+    try {
+      return this.reader.readText(relativePath);
+    } catch {
+      notices.push(`${relativePath} could not be read`);
+      return undefined;
     }
   }
 
