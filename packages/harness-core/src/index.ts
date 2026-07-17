@@ -50,3 +50,10 @@ export type {
   VerificationFeedback,
   VerificationRunnerDeps,
 } from "./verification-runner.js";
+export { ProjectDetector } from "./project-detector.js";
+export type {
+  ProjectMetadataReader,
+  ProjectKind,
+  DetectedCommandCandidate,
+  DetectedProjectProfile,
+} from "./project-detector.js";
