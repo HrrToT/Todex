@@ -443,7 +443,7 @@ Run: `git commit -m "feat: add Node and Python project detection"`
 **建议责任：** Codex 主导，因其覆盖课程评分证据。
 
 冻结设计与逐步实施计划：[T-008 设计](superpowers/specs/2026-07-17-t-008-mechanism-demo-design.md)、[T-008 实施计划](superpowers/plans/2026-07-17-t-008-mechanism-demo.md)、[GLM 任务卡](task-cards/T-008-mechanism-demo.md)。一个 GLM 在单一隔离 worktree 内按冻结场景实现，Codex 负责课程证据规约、两阶段审查、PR、CI 和整合。T-008 只用 Mock/Fake 和内存工作区；允许新增 `tsx` 作为 TypeScript CLI 开发依赖，不执行真实项目命令或修改示例仓库。
-**状态：** 设计和实施计划已批准，等待 GLM 实现。
+**状态：** 已完成 GLM 实现，等待 Codex 两阶段审查。实现 commits `12a4782`（场景模块）、`1d44ccd`（CLI 与 `tsx`）；全仓 376/376 测试通过，typecheck、lint、build 和 `git diff --check` 均通过；详见 [T-008 验证](verification/2026-07-17-t-008-mechanism-demo.md)。
 
 **Files:**
 - Create: `packages/harness-core/src/mechanism-demo.ts`
@@ -453,24 +453,24 @@ Run: `git commit -m "feat: add Node and Python project detection"`
 - Create: `docs/verification/2026-07-17-t-008-mechanism-demo.md`
 - Modify: `packages/harness-core/src/index.ts`, `tsconfig.base.json`, `vitest.workspace.ts`, `package.json`, `pnpm-lock.yaml`.
 
-- [ ] **Step 1: Test the three deterministic scenario reports**
+- [x] **Step 1: Test the three deterministic scenario reports**
 
 Add direct Core tests that assert: (1) `../.ssh/id_rsa` is hard-denied and dispatcher calls are zero; (2) a Node arithmetic patch receives `test_failure`, repairs, then reaches verified completion; (3) a Run-scoped approval for `npm install` in Run A does not execute the same action in Run B. Assert immutable, redacted report fields only.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `pnpm.cmd --filter @todex/harness-core test --run mechanism-demo.test.ts`
 Expected: FAIL because `runMechanismDemo` does not exist.
 
-- [ ] **Step 3: Implement the Mock-only reusable scenario module**
+- [x] **Step 3: Implement the Mock-only reusable scenario module**
 
 Use existing `AgentRunner`, `Guardrail`, approval, file-tool and verification contracts with module-private fresh in-memory fakes. Neither the command nor tests may execute a real project command, network request, model call, or mutate `examples/`.
 
-- [ ] **Step 4: Test and expose the fixed CLI**
+- [x] **Step 4: Test and expose the fixed CLI**
 
 Add `tsx` only as a root development dependency and define `demo:mechanisms` as `tsx scripts/run-mechanism-demo.ts`. Extend the existing root typecheck include with `scripts/**/*.ts` and Vitest workspace with `scripts`, so the normal root checks cover the CLI and its test. The CLI writes only ignored `.todex/demo/mechanism-report.json` and prints fixed redacted summary lines.
 
-- [ ] **Step 5: Verify green and record**
+- [x] **Step 5: Verify green and record**
 
 Run: `pnpm.cmd demo:mechanisms`; `pnpm.cmd test --run`; `pnpm.cmd typecheck`; `pnpm.cmd lint`; `pnpm.cmd build`; `git diff --check`.
 Expected: all pass, the JSON report has `allPassed: true`, and no generated report appears in Git status. Record exact RED/GREEN evidence and AC-01/04/05/06 mapping in the dated verification Markdown.

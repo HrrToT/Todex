@@ -39,3 +39,29 @@ Stop and report before changing contracts, CI, Electron, apps, Guardrail, AgentR
 2. Run every focused and final command in the plan using `pnpm.cmd`.
 3. Commit scenarios, CLI/dependency, and documentation evidence separately.
 4. Report full commit hashes, changed files, RED/GREEN evidence, JSON redaction proof, AC mapping, generated-file ignore proof, assumptions, and controlled exceptions.
+
+## Completion
+
+Status: implemented; awaiting Codex two-stage review
+Branch: `feat/t-008-mechanism-demo`
+Base: `5954e7b` (current `main` plus T-008 design/plan commits)
+
+Commits:
+- `12a4782eac789f910693867a76fba802148e76a7` — `test: add deterministic mechanism scenarios` (scenario module + exports + 6 tests)
+- `1d44ccd8acc1b0be56326250136a23fee8907895` — `feat: add mechanism demo command` (CLI + `tsx` + 3 tests + tsconfig/vitest/workspace/package/lockfile)
+- documentation evidence commit (this change)
+
+Verification commands (all passed):
+- `pnpm.cmd demo:mechanisms` — exit 0; four fixed summary lines; `.todex/demo/mechanism-report.json` written with `allPassed: true`.
+- `pnpm.cmd --filter @todex/harness-core test --run mechanism-demo.test.ts` — 6/6 passed.
+- `pnpm.cmd test --run` — 376/376 passed across 13 test files.
+- `pnpm.cmd typecheck` — exit 0 (compiles `packages/**` and `scripts/**`).
+- `pnpm.cmd lint` — exit 0.
+- `pnpm.cmd build` — exit 0.
+- `git diff --check` — no whitespace errors.
+
+Evidence: `docs/verification/2026-07-17-t-008-mechanism-demo.md`.
+
+Controlled exceptions: scenario 1 finish uses default `verified` completion (plan's `unverified` would yield `completed_unverified`, conflicting with the frozen test and design); scenario 3 uses one shared `AgentRunner` with a single three-item `ScriptedMockLlm` (the runner's LLM is fixed at construction); per-run dispatcher counting via `context.runId`. See the verification record for the full list.
+
+PR: not created (per frozen rule). Codex lead handles PR, CI, and merge after two-stage review.
