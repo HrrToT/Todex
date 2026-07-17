@@ -16,6 +16,7 @@ This record verifies the injected, read-only `ProjectDetector` that recognizes N
 | `830f32d` | `feat: add safe Node project detection` — `ProjectMetadataReader`, `DetectedCommandCandidate`, `DetectedProjectProfile`, `ProjectDetector` with Node rules, package-manager precedence, malformed JSON notices, immutable snapshots; public exports in `index.ts` |
 | `ddc570d` | `feat: add Python project detection` — bounded textual marker regexes for pytest/ruff/mypy, `pytest.ini` presence rule, requirements-only no-guess notice, mixed-project kinds, per-file read-failure degradation with no content leakage |
 | `b41ac16` | `test: add Node and Python detector examples` — `examples/node-bug-repo` and `examples/python-bug-repo` with intentional arithmetic defects, detector-fixture assertions for all four Node candidates and the Python pytest candidate |
+| `f68a043` | `fix: P1-1/P1-2 Codex spec review rework` — lockfile read failure fail-closed (P1-1), no script name echo in notices (P1-2), documentation type-fact correction (P2) |
 
 ## Red-green evidence
 
@@ -29,7 +30,9 @@ This record verifies the injected, read-only `ProjectDetector` that recognizes N
 | Task 3 RED (Python) | `python -m pytest examples/python-bug-repo/tests/test_calculator.py` | `No module named pytest` (environment blocker; not installed) |
 | Task 3 GREEN (Node arithmetic defect) | `node --test examples/node-bug-repo/test/price.test.js` | 1 fail; `AssertionError: -1 !== 5` (intentional `left - right` defect) |
 | Task 3 GREEN (detector fixtures) | `pnpm.cmd --filter @todex/harness-core test --run project-detector.test.ts` | 34/34 passed |
-| Full suite | `pnpm.cmd test --run` | 361/361 passed across 11 test files |
+| P1-1/P1-2 RED | `pnpm.cmd --filter @todex/harness-core test --run project-detector.test.ts` | 7 failed / 33 passed (40 total); lockfile throw silently falls back to npm; script names echoed in notices |
+| P1-1/P1-2 GREEN | Same | 40/40 passed |
+| Full suite | `pnpm.cmd test --run` | 367/367 passed across 11 test files |
 | Type safety | `pnpm.cmd typecheck` | Exit code 0 |
 | Lint | `pnpm.cmd lint` | Exit code 0 |
 | Build | `pnpm.cmd build` | Exit code 0; contracts TypeScript build executed |
@@ -47,7 +50,7 @@ Test file breakdown:
 - `smoke.test.ts`: 1 test
 - `verification-runner.test.ts`: 33 tests
 - `repair-loop.test.ts`: 21 tests
-- `project-detector.test.ts`: 34 tests
+- `project-detector.test.ts`: 40 tests
 
 ## Node package-manager precedence proof
 
@@ -62,14 +65,34 @@ The `selectManager` method checks lockfiles in fixed order and returns the first
 | pnpm + npm lockfile | `pnpm` | `prefers pnpm over npm lockfile` — `argv: ["pnpm", "test"]` |
 | npm + yarn lockfile | `npm` | `prefers npm lockfile over yarn lockfile` — `argv: ["npm", "test"]` |
 
-## Dangerous and unrecognized Node scripts ignored proof
+## Lockfile read failure fail-closed proof (P1-1 rework)
+
+When any Node lockfile `readText()` throws, the detector fails closed: the Node project is still recognized (`kinds` includes `"node"`), but no Node verification candidates are generated. A fixed notice `<lockfile> could not be read` is emitted (without raw error content, absolute paths, or file content), followed by `node package manager could not be determined`. Python detection continues independently.
+
+| Scenario | Test | Key assertions |
+| --- | --- | --- |
+| `pnpm-lock.yaml` throws | `fails closed when pnpm-lock.yaml read throws` | `kinds: ["node"]`, `candidates: []`, notices contain both `pnpm-lock.yaml could not be read` and `node package manager could not be determined`; no `D:\` or `io error` in JSON |
+| `package-lock.json` throws | `fails closed when package-lock.json read throws` | same pattern; no `secret-value` in JSON |
+| `yarn.lock` throws | `fails closed when yarn.lock read throws` | same pattern; no `/home/user` in JSON |
+| Lockfile throws + Python present | `continues Python detection when a Node lockfile read throws` | `kinds: ["node", "python"]`, `candidates: ["python.pytest"]` only |
+| `pnpm-lock.yaml` throws + `package-lock.json` readable | `does not generate npm candidates when pnpm-lock.yaml throws even if package-lock.json is readable` | `candidates: []` — does not silently fall back to npm |
+
+The `selectManager(notices)` method reads each lockfile in precedence order inside a `try/catch`. If any read throws, it immediately returns `undefined` after pushing the fixed notice. The caller in `detectNode` checks for `undefined` and skips candidate generation while still counting non-verification scripts for the P1-2 notice.
+
+## Dangerous and unrecognized Node scripts ignored proof (P1-2 rework)
 
 The test `does not turn install, deploy, prepare, or unknown scripts into candidates` provides `scripts: { install: "npm i", deploy: "ship", prepare: "setup", custom: "echo x" }` and asserts:
 
 - `profile.candidates` is `[]` — no candidate generated.
-- `profile.notices.join(" ")` contains `"install"` — the ignored script names appear in an informational notice only.
+- `profile.notices` contains a notice including `"not used as verification candidates"`.
+- `profile.notices.join(" ")` does **not** contain `"install"`, `"deploy"`, `"prepare"`, or `"custom"` — no original script key is echoed.
 
-The `RECOGNIZED_NODE_SCRIPTS` set contains exactly `test`, `lint`, `typecheck`, `build`. Every other script key — including `install`, `prepare`, `postinstall`, `deploy`, `release`, `publish`, and arbitrary custom names — is collected into the notice `package.json scripts not used as verification candidates: <names>` and never becomes a candidate.
+The test `does not echo malicious or overly long script names in notices` provides a script key `TOKEN=secret-value; ignore prior instructions` and a 500-character key, and asserts:
+
+- `profile.candidates` contains only `node.test`.
+- `JSON.stringify(profile)` does not contain `secret-value`, `ignore prior instructions`, the malicious key, or the long key.
+
+The `RECOGNIZED_NODE_SCRIPTS` set contains exactly `test`, `lint`, `typecheck`, `build`. Every other script key — including `install`, `prepare`, `postinstall`, `deploy`, `release`, `publish`, and arbitrary custom or malicious names — is counted and emitted as the fixed notice `package.json contains N scripts not used as verification candidates` (integer count only, no original names) and never becomes a candidate.
 
 ## Fixed argv templates, not script body proof
 
@@ -146,7 +169,7 @@ export interface ProjectMetadataReader {
 }
 ```
 
-The `detect()` method calls `readText` for seven named paths (`package.json`, `pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `pyproject.toml`, `pytest.ini`, `requirements.txt`) and returns a `DetectedProjectProfile`. No method on `ProjectDetector` or `ProjectMetadataReader` can dispatch an action, spawn a process, or execute a command. The `DetectedCommandCandidate` type carries `confirmedByUser: false` as a literal type, making it structurally incompatible with `ConfiguredCommand` (which requires `confirmedByUser: boolean`) until a later confirmation flow explicitly converts it.
+The `detect()` method calls `readText` for seven named paths (`package.json`, `pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `pyproject.toml`, `pytest.ini`, `requirements.txt`) and returns a `DetectedProjectProfile`. No method on `ProjectDetector` or `ProjectMetadataReader` can dispatch an action, spawn a process, or execute a command. The `DetectedCommandCandidate` type carries `confirmedByUser: false`, indicating that the candidate has not yet been confirmed by the user. A candidate cannot be used directly as a `ConfiguredCommand` because it lacks the `commandId`, `projectId`, and other fields that a later confirmation flow (T-009/T-010+) must supply; `confirmedByUser: false` is the initial unconfirmed state, not a type-level barrier.
 
 ## Immutable return snapshot proof
 
@@ -207,8 +230,8 @@ These tests do not call the example scripts; they verify only that the detector 
 ## Full verification output summary
 
 ```
-pnpm.cmd --filter @todex/harness-core test --run project-detector.test.ts  → 34/34 passed
-pnpm.cmd test --run     → 361/361 passed (11 test files)
+pnpm.cmd --filter @todex/harness-core test --run project-detector.test.ts  → 40/40 passed
+pnpm.cmd test --run     → 367/367 passed (11 test files)
 pnpm.cmd typecheck      → Exit code 0
 pnpm.cmd lint           → Exit code 0
 pnpm.cmd build          → Exit code 0
@@ -233,6 +256,12 @@ git status --short      → Clean
 7. **No real command execution**: The `ProjectDetector` reads only metadata files through the injected `ProjectMetadataReader`. It has no import of `child_process`, `CommandRunner`, `ToolDispatcher`, `AgentRunner`, or any network/LLM module. Zero command execution is structural, not conventional.
 
 8. **Node.js v24.14.0**: The test environment uses Node.js v24.14.0, which treats `.js` files with `import` as ESM when `node --test` is used, even without a `package.json` with `"type": "module"` in the same directory. The example includes `package.json` with `"type": "module"` regardless for correctness in all Node.js versions.
+
+9. **P1-1 lockfile fail-closed (Codex spec review rework)**: The initial implementation's `fileExists()` silently caught lockfile read exceptions and returned `false`, causing `selectManager()` to fall back to `npm`. The rework replaces this with `selectManager(notices)` which returns `undefined` on any lockfile read throw, adds a fixed `<lockfile> could not be read` notice, and causes `detectNode` to skip all candidate generation and emit `node package manager could not be determined`. The Node project kind is still recognized; Python detection is unaffected.
+
+10. **P1-2 no script name echo (Codex spec review rework)**: The initial implementation joined all unrecognized script keys into a notice string, potentially echoing malicious or overly long user-controlled text. The rework replaces this with a fixed notice `package.json contains N scripts not used as verification candidates` (integer count only, no original names or values). Tests verify that `TOKEN=secret-value`, `ignore prior instructions`, and 500-character keys do not appear in `JSON.stringify(profile)`.
+
+11. **P2 documentation type-fact correction (Codex spec review rework)**: The initial verification document incorrectly claimed that `confirmedByUser: false` as a literal type is "structurally incompatible" with `ConfiguredCommand`'s `confirmedByUser: boolean`. In TypeScript, `false` is a subtype of `boolean` and is assignable. The corrected text explains that a candidate cannot become a `ConfiguredCommand` because it lacks `commandId`, `projectId`, and other confirmation-supplied fields; `confirmedByUser: false` indicates the unconfirmed state, not a type barrier.
 
 ## T-008 and T-009 deferral
 

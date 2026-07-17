@@ -388,7 +388,7 @@ Run: `git commit -m "feat: add verification feedback and repair limits"`
 **建议责任：** 一个 GLM 在单一隔离 worktree 内完成 Node 与 Python 探测；Codex 负责规约、审查和整合。
 
 冻结设计与逐步实施计划：[T-007 设计](superpowers/specs/2026-07-17-t-007-project-detection-design.md)、[T-007 实施计划](superpowers/plans/2026-07-17-t-007-project-detection.md)、[GLM 任务卡](task-cards/T-007-project-detection-and-examples.md)。项目负责人决定由一个 GLM 在单一隔离 worktree 内完成 Node 与 Python 探测，Codex 负责规约、两阶段审查、PR、CI 和整合。T-007 只发现未确认候选，绝不执行命令、安装依赖或创建持久化 `ConfiguredCommand`。
-**状态：** 已完成，等待 Codex 两阶段审查。实现 commits `830f32d`（Node 探测）、`ddc570d`（Python 探测）、`b41ac16`（示例仓库与 fixture 断言）；全仓 361/361 测试通过，typecheck、lint、build 和 `git diff --check` 均通过。详见 [T-007 验证](verification/2026-07-17-t-007-project-detection.md)。
+**状态：** 已完成 Codex 规约审查返工。实现 commits `830f32d`（Node 探测）、`ddc570d`（Python 探测）、`b41ac16`（示例仓库与 fixture 断言）；返工 commit 修复 P1-1（lockfile 读取异常 fail-closed）、P1-2（notice 不回显 script 名称）和 P2（文档类型事实）。全仓 367/367 测试通过，typecheck、lint、build 和 `git diff --check` 均通过。详见 [T-007 验证](verification/2026-07-17-t-007-project-detection.md)。
 
 **Files:**
 - Create: `packages/harness-core/src/project-detector.ts`

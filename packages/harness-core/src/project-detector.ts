@@ -107,34 +107,38 @@ export class ProjectDetector {
     }
 
     const scriptObj = scripts as Record<string, unknown>;
-    const manager = this.selectManager();
+    const manager = this.selectManager(notices);
 
-    for (const rule of NODE_SCRIPT_RULES) {
-      const value = scriptObj[rule.name];
-      if (value === undefined) continue;
-      if (typeof value !== "string") {
-        notices.push(`package.json script ${rule.name} is not a string`);
-        continue;
+    if (manager !== undefined) {
+      for (const rule of NODE_SCRIPT_RULES) {
+        const value = scriptObj[rule.name];
+        if (value === undefined) continue;
+        if (typeof value !== "string") {
+          notices.push(`package.json script ${rule.name} is not a string`);
+          continue;
+        }
+        candidates.push(
+          createCandidate(
+            `node.${rule.name}`,
+            rule.purpose,
+            rule.buildArgv(manager),
+            `package.json script: ${rule.name}`,
+          ),
+        );
       }
-      candidates.push(
-        createCandidate(
-          `node.${rule.name}`,
-          rule.purpose,
-          rule.buildArgv(manager),
-          `package.json script: ${rule.name}`,
-        ),
-      );
+    } else {
+      notices.push("node package manager could not be determined");
     }
 
-    const ignored: string[] = [];
+    let ignoredCount = 0;
     for (const name of Object.keys(scriptObj)) {
       if (!RECOGNIZED_NODE_SCRIPTS.has(name)) {
-        ignored.push(name);
+        ignoredCount++;
       }
     }
-    if (ignored.length > 0) {
+    if (ignoredCount > 0) {
       notices.push(
-        `package.json scripts not used as verification candidates: ${ignored.join(", ")}`,
+        `package.json contains ${ignoredCount} scripts not used as verification candidates`,
       );
     }
   }
@@ -216,18 +220,25 @@ export class ProjectDetector {
     }
   }
 
-  private selectManager(): string {
-    if (this.fileExists("pnpm-lock.yaml")) return "pnpm";
-    if (this.fileExists("package-lock.json")) return "npm";
-    if (this.fileExists("yarn.lock")) return "yarn";
-    return "npm";
-  }
+  private selectManager(notices: string[]): string | undefined {
+    const lockfiles: ReadonlyArray<readonly [string, string]> = [
+      ["pnpm-lock.yaml", "pnpm"],
+      ["package-lock.json", "npm"],
+      ["yarn.lock", "yarn"],
+    ];
 
-  private fileExists(relativePath: string): boolean {
-    try {
-      return this.reader.readText(relativePath) !== undefined;
-    } catch {
-      return false;
+    for (const [path, manager] of lockfiles) {
+      let content: string | undefined;
+      try {
+        content = this.reader.readText(path);
+      } catch {
+        notices.push(`${path} could not be read`);
+        return undefined;
+      }
+      if (content !== undefined) {
+        return manager;
+      }
     }
+    return "npm";
   }
 }
