@@ -1,0 +1,11 @@
+{
+  "name": "todex-node-bug-repo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "lint": "node --check src/price.js",
+    "typecheck": "node --check src/price.js",
+    "build": "node --check src/price.js"
+  }
+}

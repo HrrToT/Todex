@@ -381,3 +381,74 @@ describe("ProjectDetector Python metadata degradation", () => {
     expect(JSON.stringify(profile)).not.toContain("/home/user");
   });
 });
+
+describe("ProjectDetector example repository fixtures", () => {
+  it("detects all four Node verification candidates from the node-bug-repo metadata", () => {
+    const profile = new ProjectDetector(
+      fakeReader({
+        "package.json": JSON.stringify({
+          name: "todex-node-bug-repo",
+          private: true,
+          type: "module",
+          scripts: {
+            test: "node --test",
+            lint: "node --check src/price.js",
+            typecheck: "node --check src/price.js",
+            build: "node --check src/price.js",
+          },
+        }),
+      }),
+    ).detect();
+    expect(profile.kinds).toEqual(["node"]);
+    expect(profile.candidates.map((c) => c.candidateId)).toEqual([
+      "node.test",
+      "node.lint",
+      "node.typecheck",
+      "node.build",
+    ]);
+    expect(profile.candidates[0]).toMatchObject({
+      argv: ["npm", "test"],
+      purpose: "test",
+      confirmedByUser: false,
+    });
+    expect(profile.candidates[1]).toMatchObject({
+      argv: ["npm", "run", "lint"],
+      purpose: "lint",
+    });
+    expect(profile.candidates[2]).toMatchObject({
+      argv: ["npm", "run", "typecheck"],
+      purpose: "typecheck",
+    });
+    expect(profile.candidates[3]).toMatchObject({
+      argv: ["npm", "run", "build"],
+      purpose: "build",
+    });
+  });
+
+  it("detects the pytest candidate from the python-bug-repo metadata", () => {
+    const profile = new ProjectDetector(
+      fakeReader({
+        "pyproject.toml":
+          '[project]\nname = "todex-python-bug-repo"\nversion = "0.1.0"\ndependencies = ["pytest"]\n\n[tool.pytest.ini_options]\npythonpath = ["src"]\n',
+      }),
+    ).detect();
+    expect(profile.kinds).toEqual(["python"]);
+    expect(profile.candidates.map((c) => c.candidateId)).toEqual(["python.pytest"]);
+    expect(profile.candidates[0]).toMatchObject({
+      argv: ["python", "-m", "pytest"],
+      purpose: "test",
+      confirmedByUser: false,
+    });
+  });
+
+  it("does not detect ruff or mypy from the python-bug-repo metadata", () => {
+    const profile = new ProjectDetector(
+      fakeReader({
+        "pyproject.toml":
+          '[project]\nname = "todex-python-bug-repo"\nversion = "0.1.0"\ndependencies = ["pytest"]\n\n[tool.pytest.ini_options]\npythonpath = ["src"]\n',
+      }),
+    ).detect();
+    expect(profile.candidates.some((c) => c.candidateId === "python.ruff")).toBe(false);
+    expect(profile.candidates.some((c) => c.candidateId === "python.mypy")).toBe(false);
+  });
+});
