@@ -385,7 +385,10 @@ Run: `git commit -m "feat: add verification feedback and repair limits"`
 
 **依赖：** T-005。
 **可并行：** 与 T-006 并行。
-**建议责任：** GLM 负责 Node，Qwen 负责 Python，各自独立 worktree。
+**建议责任：** 一个 GLM 在单一隔离 worktree 内完成 Node 与 Python 探测；Codex 负责规约、审查和整合。
+
+冻结设计与逐步实施计划：[T-007 设计](superpowers/specs/2026-07-17-t-007-project-detection-design.md)、[T-007 实施计划](superpowers/plans/2026-07-17-t-007-project-detection.md)、[GLM 任务卡](task-cards/T-007-project-detection-and-examples.md)。项目负责人决定由一个 GLM 在单一隔离 worktree 内完成 Node 与 Python 探测，Codex 负责规约、两阶段审查、PR、CI 和整合。T-007 只发现未确认候选，绝不执行命令、安装依赖或创建持久化 `ConfiguredCommand`。
+**状态：** 设计和实施计划已批准，等待 GLM 实现。
 
 **Files:**
 - Create: `packages/harness-core/src/project-detector.ts`
@@ -403,13 +406,13 @@ Run: `git commit -m "feat: add verification feedback and repair limits"`
 it("detects npm test and lint scripts", async () => {
   const profile = await detectProject(fixture("node-bug-repo"));
   expect(profile.kinds).toContain("node");
-  expect(profile.candidates.map((item) => item.commandId)).toContain("node.test");
+  expect(profile.candidates.map((item) => item.candidateId)).toContain("node.test");
 });
 
 it("detects pytest and ruff candidates", async () => {
   const profile = await detectProject(fixture("python-bug-repo"));
   expect(profile.kinds).toContain("python");
-  expect(profile.candidates.map((item) => item.commandId)).toContain("python.pytest");
+  expect(profile.candidates.map((item) => item.candidateId)).toContain("python.pytest");
 });
 ```
 
