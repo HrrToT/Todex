@@ -388,7 +388,7 @@ Run: `git commit -m "feat: add verification feedback and repair limits"`
 **建议责任：** 一个 GLM 在单一隔离 worktree 内完成 Node 与 Python 探测；Codex 负责规约、审查和整合。
 
 冻结设计与逐步实施计划：[T-007 设计](superpowers/specs/2026-07-17-t-007-project-detection-design.md)、[T-007 实施计划](superpowers/plans/2026-07-17-t-007-project-detection.md)、[GLM 任务卡](task-cards/T-007-project-detection-and-examples.md)。项目负责人决定由一个 GLM 在单一隔离 worktree 内完成 Node 与 Python 探测，Codex 负责规约、两阶段审查、PR、CI 和整合。T-007 只发现未确认候选，绝不执行命令、安装依赖或创建持久化 `ConfiguredCommand`。
-**状态：** 设计和实施计划已批准，等待 GLM 实现。
+**状态：** 已完成，等待 Codex 两阶段审查。实现 commits `830f32d`（Node 探测）、`ddc570d`（Python 探测）、`b41ac16`（示例仓库与 fixture 断言）；全仓 361/361 测试通过，typecheck、lint、build 和 `git diff --check` 均通过。详见 [T-007 验证](verification/2026-07-17-t-007-project-detection.md)。
 
 **Files:**
 - Create: `packages/harness-core/src/project-detector.ts`
@@ -400,7 +400,7 @@ Run: `git commit -m "feat: add verification feedback and repair limits"`
 - Create: `examples/python-bug-repo/src/calculator.py`
 - Create: `examples/python-bug-repo/tests/test_calculator.py`
 
-- [ ] **Step 1: Write failing detector tests**
+- [x] **Step 1: Write failing detector tests**
 
 ```ts
 it("detects npm test and lint scripts", async () => {
@@ -416,24 +416,26 @@ it("detects pytest and ruff candidates", async () => {
 });
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `pnpm --filter @todex/harness-core test --run project-detector.test.ts`
 Expected: FAIL because detector and fixtures do not exist.
 
-- [ ] **Step 3: Implement conservative detector rules**
+- [x] **Step 3: Implement conservative detector rules**
 
 Inspect `package.json` scripts and Python markers `pyproject.toml`, `requirements.txt`, `pytest.ini`; return candidates only, never execute them. Create one deterministic arithmetic bug in each example repository so a Mock LLM patch can make its tests pass.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
 Run: `pnpm --filter @todex/harness-core test --run project-detector.test.ts`
 Expected: PASS. Run each example's native test command manually and confirm it fails before the demonstration patch.
 
-- [ ] **Step 5: Commit and record**
+- [x] **Step 5: Commit and record**
 
 Run: `git add packages/harness-core/src/project-detector.ts packages/harness-core/test/project-detector.test.ts examples`
 Run: `git commit -m "feat: add Node and Python project detection"`
+
+实际提交：`830f32d`（Node 探测，含 contract、index 导出和 18 个测试）、`ddc570d`（Python 探测，含 marker regex、混合项目、降级和 13 个测试）、`b41ac16`（示例仓库与 fixture 断言）。Node 示例 `node --test` 以 `-1 !== 5` 算术缺陷失败；Python 示例因环境无 pytest（`No module named pytest`）而阻塞，未安装。详见 [T-007 验证](verification/2026-07-17-t-007-project-detection.md)。
 
 ### Task 8: T-008 编写可重复机制演示脚本
 

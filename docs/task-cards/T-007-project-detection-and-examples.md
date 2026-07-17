@@ -1,6 +1,6 @@
 # T-007: Project Detection and Safe Verification Candidates
 
-Status: ready
+Status: implemented, awaiting Codex review
 Responsible model: GLM
 Lead review: Codex
 Branch: `feat/t-007-project-detection`
