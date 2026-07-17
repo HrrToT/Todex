@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 状态：approved for cold-start validation
-最后更新：2026-07-13
+最后更新：2026-07-17
 
 **Goal:** 构建可在 Windows 本地仓库中运行的 Todex V1.0：自研 coding-agent Harness、Node/Python 支持、治理/HITL、反馈修复、Electron 桌面端和公网 Mock Demo。
 
@@ -332,7 +332,7 @@ Run: `git commit -m "feat: add bounded file tools and project memory"`
 **建议责任：** DeepSeek，可独立完成。
 
 冻结设计与逐步实施计划：[T-006 设计](superpowers/specs/2026-07-16-t-006-verification-feedback-design.md)、[T-006 实施计划](superpowers/plans/2026-07-16-t-006-verification-feedback.md)、[DeepSeek 任务卡](task-cards/T-006-verification-feedback-and-repair.md)。T-006 只使用注入式 CommandRunner 和已确认的固定 commandId；真实进程执行、项目探测、SQLite 和 Electron 宿主能力不在本任务范围。
-**状态：** 已完成；实现 commits `c5247a0`、`9733abb`、`f6365f8`、`8c3ec90`；全仓 306/306 测试通过，typecheck、lint、build 均通过。详见 [T-006 验证](verification/2026-07-16-t-006-verification-feedback.md)。
+**状态：** 已完成并合入 `main`。实现 commits `c5247a0`、`9733abb`、`f6365f8`、`8c3ec90`；Codex 审查返工 commits `bea859a`、`cf11eed`；[PR #5](https://github.com/HrrToT/Todex/pull/5) 的 GitHub Actions CI 通过后，以 merge commit `adc33c3` 合入。最终独立复验为全仓 327/327 测试通过，typecheck、lint、build 和 `git diff --check` 均通过。详见 [T-006 验证](verification/2026-07-16-t-006-verification-feedback.md)。
 
 **Files:**
 - Create: `packages/harness-core/src/verification-runner.ts`
@@ -379,13 +379,16 @@ Expected: PASS. Add cases for dependency missing, timeout, no configured command
 Run: `git add packages/harness-core/src/verification-runner.ts packages/harness-core/src/agent-runner.ts packages/harness-core/test`
 Run: `git commit -m "feat: add verification feedback and repair limits"`
 
-实际提交：`c5247a0`（验证运行器）、`9733abb`（反馈回灌修复循环）、`f6365f8`（修复限制与环境停止）、`8c3ec90`（类型对齐修复）。最终独立复验为全仓 306/306 测试通过，typecheck、lint、build 均通过。详见 [T-006 验证](verification/2026-07-16-t-006-verification-feedback.md)。
+实际提交：`c5247a0`（验证运行器）、`9733abb`（反馈回灌修复循环）、`f6365f8`（修复限制与环境停止）、`8c3ec90`（类型对齐修复）、`4449fcc`（初始证据）、`bea859a`（P1/P2 审查返工）和 `cf11eed`（每轮 LLM 校验反馈快照冻结）。Codex 先完成规约符合性审查，再完成代码质量/安全审查；其发现的命令注册表信任、异常收敛、Unix 绝对路径脱敏、反馈不可变性和精确终态问题均以先红后绿方式修复。最终独立复验为全仓 327/327 测试通过，typecheck、lint、build 和 `git diff --check` 均通过；[PR #5](https://github.com/HrrToT/Todex/pull/5) CI 通过后以 `adc33c3` 合入 `main`。详见 [T-006 验证](verification/2026-07-16-t-006-verification-feedback.md)。
 
 ### Task 7: T-007 实现 Node.js/Python 探测与示例仓库
 
 **依赖：** T-005。
 **可并行：** 与 T-006 并行。
-**建议责任：** GLM 负责 Node，Qwen 负责 Python，各自独立 worktree。
+**建议责任：** 一个 GLM 在单一隔离 worktree 内完成 Node 与 Python 探测；Codex 负责规约、审查和整合。
+
+冻结设计与逐步实施计划：[T-007 设计](superpowers/specs/2026-07-17-t-007-project-detection-design.md)、[T-007 实施计划](superpowers/plans/2026-07-17-t-007-project-detection.md)、[GLM 任务卡](task-cards/T-007-project-detection-and-examples.md)。项目负责人决定由一个 GLM 在单一隔离 worktree 内完成 Node 与 Python 探测，Codex 负责规约、两阶段审查、PR、CI 和整合。T-007 只发现未确认候选，绝不执行命令、安装依赖或创建持久化 `ConfiguredCommand`。
+**状态：** 已完成 Codex 规约审查返工。实现 commits `830f32d`（Node 探测）、`ddc570d`（Python 探测）、`b41ac16`（示例仓库与 fixture 断言）；返工 commit 修复 P1-1（lockfile 读取异常 fail-closed）、P1-2（notice 不回显 script 名称）和 P2（文档类型事实）。全仓 367/367 测试通过，typecheck、lint、build 和 `git diff --check` 均通过。详见 [T-007 验证](verification/2026-07-17-t-007-project-detection.md)。
 
 **Files:**
 - Create: `packages/harness-core/src/project-detector.ts`
@@ -397,40 +400,42 @@ Run: `git commit -m "feat: add verification feedback and repair limits"`
 - Create: `examples/python-bug-repo/src/calculator.py`
 - Create: `examples/python-bug-repo/tests/test_calculator.py`
 
-- [ ] **Step 1: Write failing detector tests**
+- [x] **Step 1: Write failing detector tests**
 
 ```ts
 it("detects npm test and lint scripts", async () => {
   const profile = await detectProject(fixture("node-bug-repo"));
   expect(profile.kinds).toContain("node");
-  expect(profile.candidates.map((item) => item.commandId)).toContain("node.test");
+  expect(profile.candidates.map((item) => item.candidateId)).toContain("node.test");
 });
 
 it("detects pytest and ruff candidates", async () => {
   const profile = await detectProject(fixture("python-bug-repo"));
   expect(profile.kinds).toContain("python");
-  expect(profile.candidates.map((item) => item.commandId)).toContain("python.pytest");
+  expect(profile.candidates.map((item) => item.candidateId)).toContain("python.pytest");
 });
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `pnpm --filter @todex/harness-core test --run project-detector.test.ts`
 Expected: FAIL because detector and fixtures do not exist.
 
-- [ ] **Step 3: Implement conservative detector rules**
+- [x] **Step 3: Implement conservative detector rules**
 
 Inspect `package.json` scripts and Python markers `pyproject.toml`, `requirements.txt`, `pytest.ini`; return candidates only, never execute them. Create one deterministic arithmetic bug in each example repository so a Mock LLM patch can make its tests pass.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
 Run: `pnpm --filter @todex/harness-core test --run project-detector.test.ts`
 Expected: PASS. Run each example's native test command manually and confirm it fails before the demonstration patch.
 
-- [ ] **Step 5: Commit and record**
+- [x] **Step 5: Commit and record**
 
 Run: `git add packages/harness-core/src/project-detector.ts packages/harness-core/test/project-detector.test.ts examples`
 Run: `git commit -m "feat: add Node and Python project detection"`
+
+实际提交：`830f32d`（Node 探测，含 contract、index 导出和 18 个测试）、`ddc570d`（Python 探测，含 marker regex、混合项目、降级和 13 个测试）、`b41ac16`（示例仓库与 fixture 断言）。Node 示例 `node --test` 以 `-1 !== 5` 算术缺陷失败；Python 示例因环境无 pytest（`No module named pytest`）而阻塞，未安装。详见 [T-007 验证](verification/2026-07-17-t-007-project-detection.md)。
 
 ### Task 8: T-008 编写可重复机制演示脚本
 
