@@ -57,3 +57,10 @@ export type {
   DetectedCommandCandidate,
   DetectedProjectProfile,
 } from "./project-detector.js";
+export { runMechanismDemo } from "./mechanism-demo.js";
+export type {
+  MechanismDemoReport,
+  WorkspaceEscapeDemo,
+  RepairFeedbackDemo,
+  ApprovalIsolationDemo,
+} from "./mechanism-demo.js";
