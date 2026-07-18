@@ -480,6 +480,9 @@ Expected: all pass, the JSON report has `allPassed: true`, and no generated repo
 **依赖：** T-005、T-006。
 **建议责任：** DeepSeek，可独立完成；Credential Manager 必须由 Codex 审查。
 
+冻结设计与实施计划：[T-009 设计](superpowers/specs/2026-07-18-t-009-desktop-persistence-design.md)、[T-009 实施计划](superpowers/plans/2026-07-18-t-009-desktop-persistence.md)、[任务卡](task-cards/T-009-desktop-persistence.md)。T-009 采用 `better-sqlite3 + keytar`，凭据不可用时 fail closed；它只提供 SQLite、Credential Manager、最小安全 Electron 宿主和 typed IPC，不实现工作台 UI、真实模型执行或安装包。
+**状态：** 设计已批准，实施计划等待审阅。
+
 **Files:**
 - Create: `apps/desktop/package.json`
 - Create: `apps/desktop/src/main/sqlite-store.ts`
