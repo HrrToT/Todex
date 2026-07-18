@@ -11,7 +11,7 @@ import { Guardrail, normalizePath, type PathResolver } from "./guardrail.js";
 import { InMemoryApprovalStore } from "./approval-store.js";
 import { VerificationRunner, type CommandExecution, type CommandExecutionCondition, type CommandRunner, type ConfiguredCommandRegistry } from "./verification-runner.js";
 import { FileTools, type SearchMatch, type WorkspaceFs } from "./file-tools.js";
-import type { Clock, GovernanceContext, ToolDispatcher } from "./llm.js";
+import type { Clock, ToolDispatcher } from "./llm.js";
 
 export interface WorkspaceEscapeDemo {
   readonly passed: boolean;
@@ -266,14 +266,6 @@ async function runWorkspaceEscapeScenario(): Promise<WorkspaceEscapeDemo> {
   const { clock, store, guardrail } = buildGuardrail();
   const dispatcher = new CountingDispatcher();
   const readAction: Action = { tool: "read_file", path: "../.ssh/id_rsa" };
-  const govContext: GovernanceContext = {
-    runId: "demo-escape",
-    projectId: PROJECT_ID,
-    workspaceRoot: WORKSPACE_ROOT,
-    actionId: "demo-escape-step-0",
-  };
-  const decision = guardrail.evaluate(readAction, govContext);
-  const actualReason = decision.decision === "deny" ? decision.reason : "";
 
   const llm = new ScriptedMockLlm([
     readAction,
@@ -294,12 +286,23 @@ async function runWorkspaceEscapeScenario(): Promise<WorkspaceEscapeDemo> {
     workspaceRoot: WORKSPACE_ROOT,
   });
 
+  const rejectedResult = result.results.find(
+    (candidate) =>
+      candidate.status === "rejected" && candidate.summary === "denied: workspace_escape",
+  );
+  const rejectionObserved =
+    rejectedResult?.status === "rejected" &&
+    rejectedResult.summary === "denied: workspace_escape";
+  if (!rejectionObserved) {
+    throw new Error("workspace_escape_demo_failed");
+  }
+
   const expectedTrace = ["action_requested", "action_rejected", "action_requested", "run_completed"];
   const traceTypes = result.trace.map((event) => event.type);
   const passed =
     result.status === "completed" &&
     dispatcher.callsFor("demo-escape") === 0 &&
-    actualReason === "workspace_escape" &&
+    rejectionObserved &&
     traceTypes.length === expectedTrace.length &&
     traceTypes.every((type, index) => type === expectedTrace[index]);
 

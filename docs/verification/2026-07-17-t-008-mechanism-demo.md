@@ -1,6 +1,6 @@
 # T-008 Deterministic Mechanism Demo Verification
 
-Status: implemented; awaiting Codex lead review
+Status: Codex review rework complete
 Verification date: 2026-07-18
 Verification branch: `feat/t-008-mechanism-demo`
 Base: `5954e7b` (current `main` plus T-008 design/plan commits)
@@ -15,6 +15,7 @@ This record verifies the T-008 Mock-only mechanism demonstration: one reusable `
 | --- | --- |
 | `12a4782eac789f910693867a76fba802148e76a7` | `test: add deterministic mechanism scenarios` — `packages/harness-core/src/mechanism-demo.ts` with `runMechanismDemo()`, module-private in-memory fakes, three scenarios, and `deepFreeze` report; public exports in `packages/harness-core/src/index.ts`; `packages/harness-core/test/mechanism-demo.test.ts` with six direct report/trace/redaction/immutability tests |
 | `1d44ccd8acc1b0be56326250136a23fee8907895` | `feat: add mechanism demo command` — `scripts/run-mechanism-demo.ts` (`writeDemoReport` helper + `main`), `scripts/test/run-mechanism-demo.test.ts` (three CLI write/failure-path tests), `tsconfig.base.json` include of `scripts/**/*.ts`, `vitest.workspace.ts` `scripts` project, root `package.json` `tsx` dev dependency and `demo:mechanisms` script, `pnpm-lock.yaml` |
+| review rework (this commit) | Scenario 1 takes proof from `AgentRunner`'s rejected `ToolResult` instead of an independent guardrail call; CLI exposes injected `runMechanismDemoCli()` and two no-leakage failure tests. |
 
 ## Red-green evidence
 
@@ -24,7 +25,11 @@ This record verifies the T-008 Mock-only mechanism demonstration: one reusable `
 | Task 1 GREEN | Same | 6/6 passed |
 | Task 2 RED | `pnpm.cmd test --run scripts/test/run-mechanism-demo.test.ts` | 1 failed suite; `Failed to load url ../run-mechanism-demo.js` (scripts project discovered as `|scripts|`) |
 | Task 2 GREEN | Same | 3/3 passed |
-| Full suite | `pnpm.cmd test --run` | 376/376 passed across 13 test files |
+| Review P1 RED | `pnpm.cmd --filter @todex/harness-core test --run mechanism-demo.test.ts` | 1 failed: the scenario implementation still contained `guardrail.evaluate`. |
+| Review P1 GREEN | Same | 6/6 passed after report proof required the Runner rejected `ToolResult`. |
+| Review P2 RED | `pnpm.cmd test --run scripts/test/run-mechanism-demo.test.ts` | 2 failed: `runMechanismDemoCli is not a function`. |
+| Review P2 GREEN | Same | 5/5 passed with injected writer/log/exit-code dependencies. |
+| Full suite | `pnpm.cmd test --run` | 378/378 passed across 13 test files |
 | Type safety | `pnpm.cmd typecheck` | Exit code 0 (compiles `packages/**` and `scripts/**`) |
 | Lint | `pnpm.cmd lint` | Exit code 0 |
 | Build | `pnpm.cmd build` | Exit code 0; contracts TypeScript build executed |
@@ -44,13 +49,13 @@ Test file breakdown after T-008:
 - `repair-loop.test.ts`: 21 tests
 - `project-detector.test.ts`: 40 tests
 - `mechanism-demo.test.ts`: 6 tests
-- `scripts/test/run-mechanism-demo.test.ts`: 3 tests
+- `scripts/test/run-mechanism-demo.test.ts`: 5 tests
 
 ## Scenario 1: Workspace escape is hard-denied before dispatch (AC-04)
 
-The scripted Mock LLM emits `read_file` with path `../.ssh/id_rsa` and then `finish`. The real T-004 `Guardrail` evaluates the action before dispatch.
+The scripted Mock LLM emits `read_file` with path `../.ssh/id_rsa` and then `finish`. The real T-004 `Guardrail` evaluates the action inside `AgentRunner` before dispatch.
 
-The `DemoPathResolver` resolves `../.ssh/id_rsa` against workspace root `/workspace` to canonical `/.ssh/id_rsa`, which is outside the workspace, so `checkPath` returns `deny: workspace_escape`. The `AgentRunner` records `action_requested`, `action_rejected`, then on the next turn `action_requested` (finish) and `run_completed`.
+The `DemoPathResolver` resolves `../.ssh/id_rsa` against workspace root `/workspace` to canonical `/.ssh/id_rsa`, which is outside the workspace, so the Runner records a rejected `ToolResult` with `status: "rejected"` and fixed summary `denied: workspace_escape`. Scenario 1 reads that entry from `result.results`; it does not make an independent `Guardrail.evaluate` call. Missing Runner evidence raises only `workspace_escape_demo_failed`. The `AgentRunner` trace is `action_requested`, `action_rejected`, then on the next turn `action_requested` (finish) and `run_completed`.
 
 | Assertion | Evidence |
 | --- | --- |
@@ -131,7 +136,7 @@ approval-isolation: passed
 report: .todex/demo/mechanism-report.json
 ```
 
-On any failure the wrapper prints the fixed line `mechanism-demo: failed` and sets `process.exitCode = 1` without raw exception output. The CLI test `throws demo_report_failed when allPassed is false and never calls the writer` and `throws demo_report_failed when the writer rejects` cover both nonzero paths with injected fakes (no real disk writes during Vitest).
+`runMechanismDemoCli(deps)` owns this behavior and receives `runDemo`, the writer, a logger, and an exit-code sink. On any failure it emits only `mechanism-demo: failed` and sets code `1` without raw exception output. The two injected tests prove a false report never calls the writer and that `Error("disk full API_KEY=secret-value")` still emits only the fixed line. Neither test touches real disk or `process.exitCode`.
 
 The `main()` entry is guarded by `import.meta.url === pathToFileURL(process.argv[1]).href`, so importing the module in Vitest does not trigger a real report write.
 

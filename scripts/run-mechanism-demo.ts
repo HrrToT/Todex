@@ -13,6 +13,13 @@ export interface DemoReportWriterDeps {
   readonly writeFile: (path: string, data: string, encoding?: BufferEncoding) => Promise<unknown>;
 }
 
+export interface MechanismDemoCliDeps {
+  readonly runDemo: () => Promise<MechanismDemoReport>;
+  readonly writer: DemoReportWriterDeps;
+  readonly log: (line: string) => void;
+  readonly setExitCode: (code: number) => void;
+}
+
 export async function writeDemoReport(
   report: MechanismDemoReport,
   deps: DemoReportWriterDeps,
@@ -29,18 +36,29 @@ export async function writeDemoReport(
   }
 }
 
-async function main(): Promise<void> {
+export async function runMechanismDemoCli(deps: MechanismDemoCliDeps): Promise<void> {
   try {
-    const report = await runMechanismDemo();
-    await writeDemoReport(report, { mkdir, writeFile });
-    console.log(`workspace-escape: ${report.workspaceEscape.passed ? "passed" : "failed"}`);
-    console.log(`repair-feedback: ${report.repairFeedback.passed ? "passed" : "failed"}`);
-    console.log(`approval-isolation: ${report.approvalIsolation.passed ? "passed" : "failed"}`);
-    console.log(`report: ${DEMO_REPORT_PATH}`);
+    const report = await deps.runDemo();
+    await writeDemoReport(report, deps.writer);
+    deps.log(`workspace-escape: ${report.workspaceEscape.passed ? "passed" : "failed"}`);
+    deps.log(`repair-feedback: ${report.repairFeedback.passed ? "passed" : "failed"}`);
+    deps.log(`approval-isolation: ${report.approvalIsolation.passed ? "passed" : "failed"}`);
+    deps.log(`report: ${DEMO_REPORT_PATH}`);
   } catch {
-    console.log("mechanism-demo: failed");
-    process.exitCode = 1;
+    deps.log("mechanism-demo: failed");
+    deps.setExitCode(1);
   }
+}
+
+function main(): Promise<void> {
+  return runMechanismDemoCli({
+    runDemo: runMechanismDemo,
+    writer: { mkdir, writeFile },
+    log: console.log,
+    setExitCode: (code) => {
+      process.exitCode = code;
+    },
+  });
 }
 
 const isMain =
@@ -49,6 +67,7 @@ const isMain =
 
 if (isMain) {
   main().catch(() => {
+    console.log("mechanism-demo: failed");
     process.exitCode = 1;
   });
 }

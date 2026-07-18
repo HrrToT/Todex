@@ -1,6 +1,6 @@
 # T-008: Deterministic Mechanism Demo
 
-Status: ready
+Status: review rework complete
 Responsible model: GLM
 Lead review: Codex
 Branch: `feat/t-008-mechanism-demo`
@@ -37,24 +37,25 @@ Stop and report before changing contracts, CI, Electron, apps, Guardrail, AgentR
 
 1. Follow the implementation plan in order; run a RED test before each production behavior change.
 2. Run every focused and final command in the plan using `pnpm.cmd`.
-3. Commit scenarios, CLI/dependency, and documentation evidence separately.
+3. Commit the review rework and its documentation evidence together as one scoped commit.
 4. Report full commit hashes, changed files, RED/GREEN evidence, JSON redaction proof, AC mapping, generated-file ignore proof, assumptions, and controlled exceptions.
 
 ## Completion
 
-Status: implemented; awaiting Codex two-stage review
+Status: Codex review rework complete
 Branch: `feat/t-008-mechanism-demo`
 Base: `5954e7b` (current `main` plus T-008 design/plan commits)
 
 Commits:
 - `12a4782eac789f910693867a76fba802148e76a7` — `test: add deterministic mechanism scenarios` (scenario module + exports + 6 tests)
 - `1d44ccd8acc1b0be56326250136a23fee8907895` — `feat: add mechanism demo command` (CLI + `tsx` + 3 tests + tsconfig/vitest/workspace/package/lockfile)
-- documentation evidence commit (this change)
+- this review-rework commit — Runner-backed workspace-escape proof, injectable CLI failure handling, five script tests, and updated evidence
 
 Verification commands (all passed):
 - `pnpm.cmd demo:mechanisms` — exit 0; four fixed summary lines; `.todex/demo/mechanism-report.json` written with `allPassed: true`.
 - `pnpm.cmd --filter @todex/harness-core test --run mechanism-demo.test.ts` — 6/6 passed.
-- `pnpm.cmd test --run` — 376/376 passed across 13 test files.
+- `pnpm.cmd test --run scripts/test/run-mechanism-demo.test.ts` — 5/5 passed without real disk or `process.exitCode` mutation.
+- `pnpm.cmd test --run` — 378/378 passed across 13 test files.
 - `pnpm.cmd typecheck` — exit 0 (compiles `packages/**` and `scripts/**`).
 - `pnpm.cmd lint` — exit 0.
 - `pnpm.cmd build` — exit 0.
@@ -65,3 +66,9 @@ Evidence: `docs/verification/2026-07-17-t-008-mechanism-demo.md`.
 Controlled exceptions: scenario 1 finish uses default `verified` completion (plan's `unverified` would yield `completed_unverified`, conflicting with the frozen test and design); scenario 3 uses one shared `AgentRunner` with a single three-item `ScriptedMockLlm` (the runner's LLM is fixed at construction); per-run dispatcher counting via `context.runId`. See the verification record for the full list.
 
 PR: not created (per frozen rule). Codex lead handles PR, CI, and merge after two-stage review.
+
+## Codex Review Rework
+
+P1 is closed by deriving Scenario 1 proof only after `AgentRunner.run()` returns: a rejected entry in `result.results` must have `status === "rejected"` and `summary === "denied: workspace_escape"`. The report still emits only the fixed `denialReason: "workspace_escape"`; absent Runner evidence raises the fixed `workspace_escape_demo_failed` error. The focused test explicitly checks the report reason, full trace, zero dispatches, and documents that the source is the Runner rejected `ToolResult`.
+
+P2 is closed by exporting `MechanismDemoCliDeps` and `runMechanismDemoCli()`. It injects the demo, writer, log, and exit-code sink. A false report never invokes the writer; a writer exception containing a secret-like string produces only `mechanism-demo: failed` and exit code `1`. The `main` adapter supplies the real dependencies, and its outer catch uses the same fixed failure text and nonzero code.

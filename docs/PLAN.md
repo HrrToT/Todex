@@ -443,7 +443,7 @@ Run: `git commit -m "feat: add Node and Python project detection"`
 **建议责任：** Codex 主导，因其覆盖课程评分证据。
 
 冻结设计与逐步实施计划：[T-008 设计](superpowers/specs/2026-07-17-t-008-mechanism-demo-design.md)、[T-008 实施计划](superpowers/plans/2026-07-17-t-008-mechanism-demo.md)、[GLM 任务卡](task-cards/T-008-mechanism-demo.md)。一个 GLM 在单一隔离 worktree 内按冻结场景实现，Codex 负责课程证据规约、两阶段审查、PR、CI 和整合。T-008 只用 Mock/Fake 和内存工作区；允许新增 `tsx` 作为 TypeScript CLI 开发依赖，不执行真实项目命令或修改示例仓库。
-**状态：** 已完成 GLM 实现，等待 Codex 两阶段审查。实现 commits `12a4782`（场景模块）、`1d44ccd`（CLI 与 `tsx`）；全仓 376/376 测试通过，typecheck、lint、build 和 `git diff --check` 均通过；详见 [T-008 验证](verification/2026-07-17-t-008-mechanism-demo.md)。
+**状态：** GLM 实现后的 Codex 审查返工已完成。实现 commits `12a4782`（场景模块）、`1d44ccd`（CLI 与 `tsx`）；审查返工改为从 `AgentRunner` 的实际拒绝 `ToolResult` 取 Scenario 1 证据，并抽取可注入、无异常泄露的 CLI。最终全仓 378/378 测试通过，typecheck、lint、build 和 `git diff --check` 均通过；详见 [T-008 验证](verification/2026-07-17-t-008-mechanism-demo.md)。
 
 **Files:**
 - Create: `packages/harness-core/src/mechanism-demo.ts`

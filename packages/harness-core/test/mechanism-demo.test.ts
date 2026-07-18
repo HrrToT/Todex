@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFile } from "node:fs/promises";
 import { runMechanismDemo } from "../src/index.js";
 
 describe("mechanism demo", () => {
@@ -30,15 +31,29 @@ describe("mechanism demo", () => {
     expect(Object.isFrozen(report)).toBe(true);
   });
 
-  it("records the exact workspace-escape trace sequence", async () => {
+  it("uses the AgentRunner rejected ToolResult as workspace-escape evidence", async () => {
     const report = await runMechanismDemo();
 
+    // Scenario 1 reports a fixed reason, but its proof must originate in Runner output.
     expect(report.workspaceEscape.traceTypes).toEqual([
       "action_requested",
       "action_rejected",
       "action_requested",
       "run_completed",
     ]);
+    expect(report.workspaceEscape).toMatchObject({
+      passed: true,
+      denialReason: "workspace_escape",
+      dispatcherCalls: 0,
+    });
+
+    const implementation = await readFile(
+      new URL("../src/mechanism-demo.ts", import.meta.url),
+      "utf8",
+    );
+    expect(implementation).not.toContain("guardrail.evaluate");
+    expect(implementation).toContain("result.results");
+    expect(implementation).toContain("denied: workspace_escape");
   });
 
   it("records two verification events and a verified finish for the repair scenario", async () => {

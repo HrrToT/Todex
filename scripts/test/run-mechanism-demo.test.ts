@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { writeDemoReport, type MechanismDemoReport } from "../run-mechanism-demo.js";
+import {
+  runMechanismDemoCli,
+  writeDemoReport,
+  type MechanismDemoReport,
+} from "../run-mechanism-demo.js";
 
 const passingReport: MechanismDemoReport = {
   allPassed: true,
@@ -82,5 +86,53 @@ describe("mechanism-demo CLI writeDemoReport", () => {
         },
       }),
     ).rejects.toThrow("demo_report_failed");
+  });
+
+  it("logs only the fixed failure line when a failing report prevents a write", async () => {
+    const logs: string[] = [];
+    const exitCodes: number[] = [];
+    const writerCalls: string[] = [];
+
+    await runMechanismDemoCli({
+      runDemo: async () => failingReport,
+      writer: {
+        mkdir: async () => {
+          writerCalls.push("mkdir");
+        },
+        writeFile: async () => {
+          writerCalls.push("writeFile");
+        },
+      },
+      log: (line) => logs.push(line),
+      setExitCode: (code) => exitCodes.push(code),
+    });
+
+    expect(logs).toEqual(["mechanism-demo: failed"]);
+    expect(exitCodes).toEqual([1]);
+    expect(writerCalls).toEqual([]);
+    expect(JSON.stringify({ logs, exitCodes, writerCalls })).not.toContain("npm install");
+    expect(JSON.stringify({ logs, exitCodes, writerCalls })).not.toContain("secret");
+  });
+
+  it("does not expose writer exception text through the CLI failure line", async () => {
+    const logs: string[] = [];
+    const exitCodes: number[] = [];
+
+    await runMechanismDemoCli({
+      runDemo: async () => passingReport,
+      writer: {
+        mkdir: async () => undefined,
+        writeFile: async () => {
+          throw new Error("disk full API_KEY=secret-value");
+        },
+      },
+      log: (line) => logs.push(line),
+      setExitCode: (code) => exitCodes.push(code),
+    });
+
+    expect(logs).toEqual(["mechanism-demo: failed"]);
+    expect(exitCodes).toEqual([1]);
+    expect(logs.join("\n")).not.toContain("disk full");
+    expect(logs.join("\n")).not.toContain("secret-value");
   });
 });
