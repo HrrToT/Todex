@@ -30,16 +30,42 @@ afterEach(() => {
 });
 
 describe("SQLiteStore", () => {
-  it("migrates a fresh database to version 1 and reopens idempotently", () => {
+  it("migrates a fresh database to version 2 and reopens idempotently", () => {
     const databasePath = createDatabasePath();
     const first = SQLiteStore.open({ databasePath });
 
-    expect(first.getMigrationVersion()).toBe(1);
+    expect(first.getMigrationVersion()).toBe(2);
     first.close();
 
     const reopened = SQLiteStore.open({ databasePath });
-    expect(reopened.getMigrationVersion()).toBe(1);
+    expect(reopened.getMigrationVersion()).toBe(2);
     reopened.close();
+  });
+
+  it("upgrades a version 1 database with recoverable credential-clear state", () => {
+    const databasePath = createDatabasePath();
+    const database = new Database(databasePath);
+    database.exec(`
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+      CREATE TABLE model_configs (
+        config_id TEXT PRIMARY KEY,
+        project_id TEXT,
+        base_url TEXT NOT NULL,
+        model TEXT NOT NULL,
+        parameters_json TEXT NOT NULL,
+        credential_ref TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO schema_migrations (version, applied_at) VALUES (1, '2026-07-19T00:00:00.000Z');
+    `);
+    database.close();
+
+    const store = SQLiteStore.open({ databasePath });
+
+    expect(store.getMigrationVersion()).toBe(2);
+    expect(store.listColumns("credential_clear_pending")).toContain("credential_ref");
+    store.close();
   });
 
   it("fails closed for a database newer than this host supports", () => {
@@ -203,6 +229,51 @@ describe("SQLiteStore", () => {
       "approval-approved",
       "approval-denied",
     ]);
+    store.close();
+  });
+
+  it("rejects a verification whose run and configured command belong to different projects", () => {
+    const store = SQLiteStore.open({ databasePath: createDatabasePath() });
+    const otherProject = {
+      ...PROJECT,
+      projectId: "project-2",
+      workspaceRoot: "C:\\workspace\\two",
+      displayName: "Workspace Two",
+    };
+    store.saveProject(PROJECT);
+    store.saveProject(otherProject);
+    store.saveRun({
+      runId: "run-project-1",
+      projectId: PROJECT.projectId,
+      taskText: "Run verification",
+      status: "completed",
+      startedAt: "2026-07-19T00:00:00.000Z",
+      endedAt: "2026-07-19T00:01:00.000Z",
+      repairAttempts: 0,
+    });
+    store.saveCommand({
+      commandId: "command-project-2",
+      projectId: otherProject.projectId,
+      purpose: "test",
+      argv: ["pnpm", "test"],
+      workingDirectory: otherProject.workspaceRoot,
+      timeoutMs: 60_000,
+      confirmedByUser: true,
+    });
+
+    expect(() =>
+      store.saveVerification({
+        verificationId: "verification-cross-project",
+        runId: "run-project-1",
+        commandId: "command-project-2",
+        classification: "passed",
+        exitCode: 0,
+        durationMs: 100,
+        failureSummary: "",
+        relatedPaths: [],
+      }),
+    ).toThrow("verification_project_mismatch");
+    expect(store.listVerifications("run-project-1")).toEqual([]);
     store.close();
   });
 });

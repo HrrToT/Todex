@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CredentialAdapter } from "../src/main/credential-store.js";
 import { WorkspaceHost } from "../src/main/workspace-host.js";
@@ -27,6 +27,18 @@ class InMemoryCredentialAdapter implements CredentialAdapter {
   }
   async remove(credentialRef: string): Promise<void> {
     this.values.delete(credentialRef);
+  }
+
+  has(credentialRef: string): boolean {
+    return this.values.has(credentialRef);
+  }
+
+  credentialRefs(): readonly string[] {
+    return [...this.values.keys()];
+  }
+
+  value(credentialRef: string): string | undefined {
+    return this.values.get(credentialRef);
   }
 }
 
@@ -109,7 +121,7 @@ describe("WorkspaceHost", () => {
     cleared.close();
   });
 
-  it("keeps a persisted credential reference unchanged when keytar fails", async () => {
+  it("records a pending clear instead of retaining a live SQLite reference when keytar fails", async () => {
     const userDataPath = temporaryUserDataPath();
     const host = await WorkspaceHost.open({
       userDataPath,
@@ -120,10 +132,82 @@ describe("WorkspaceHost", () => {
     await expect(host.saveCredential(MODEL_CONFIG.configId, API_KEY_SEED)).rejects.toThrow(
       "credential_unavailable",
     );
-    await expect(host.clearCredential(MODEL_CONFIG.configId)).rejects.toThrow("credential_unavailable");
     expect(host.store.getModelConfig(MODEL_CONFIG.configId)?.credentialRef).toBe("existing-ref");
+    await expect(host.clearCredential(MODEL_CONFIG.configId)).rejects.toThrow("credential_unavailable");
+    expect(host.store.getModelConfig(MODEL_CONFIG.configId)?.credentialRef).toBeUndefined();
+    expect(host.store.getPendingCredentialClear(MODEL_CONFIG.configId)).toEqual({
+      configId: MODEL_CONFIG.configId,
+      credentialRef: "existing-ref",
+    });
     host.close();
 
     expect(readFileSync(join(userDataPath, "todex.sqlite")).toString("utf8")).not.toContain(API_KEY_SEED);
+  });
+
+  it("removes a newly saved keytar secret when its SQLite reference cannot persist", async () => {
+    const userDataPath = temporaryUserDataPath();
+    const adapter = new InMemoryCredentialAdapter();
+    const host = await WorkspaceHost.open({ userDataPath, credentialAdapter: adapter });
+    host.store.saveModelConfig(MODEL_CONFIG);
+    vi.spyOn(host.store, "replaceCredentialReference").mockImplementationOnce(() => {
+      throw new Error("private sqlite detail");
+    });
+
+    const error = await host.saveCredential(MODEL_CONFIG.configId, API_KEY_SEED).catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("credential_persistence_failed");
+    expect((error as Error).message).not.toContain(API_KEY_SEED);
+    expect(host.store.getModelConfig(MODEL_CONFIG.configId)?.credentialRef).toBeUndefined();
+    expect(adapter.credentialRefs()).toEqual([]);
+    host.close();
+
+    expect(readFileSync(join(userDataPath, "todex.sqlite")).toString("utf8")).not.toContain(API_KEY_SEED);
+  });
+
+  it("preserves an existing credential while cleaning a replacement key after SQLite persistence fails", async () => {
+    const userDataPath = temporaryUserDataPath();
+    const adapter = new InMemoryCredentialAdapter();
+    const host = await WorkspaceHost.open({ userDataPath, credentialAdapter: adapter });
+    host.store.saveModelConfig({ ...MODEL_CONFIG, credentialRef: "existing-ref" });
+    await adapter.save("existing-ref", "previous-secret");
+    vi.spyOn(host.store, "replaceCredentialReference").mockImplementationOnce(() => {
+      throw new Error("private sqlite detail");
+    });
+
+    await expect(host.saveCredential(MODEL_CONFIG.configId, API_KEY_SEED)).rejects.toThrow(
+      "credential_persistence_failed",
+    );
+
+    expect(host.store.getModelConfig(MODEL_CONFIG.configId)?.credentialRef).toBe("existing-ref");
+    expect(adapter.value("existing-ref")).toBe("previous-secret");
+    expect(adapter.credentialRefs()).toEqual(["existing-ref"]);
+    host.close();
+  });
+
+  it("clears the SQLite reference before a successful keytar delete can leave it dead", async () => {
+    const userDataPath = temporaryUserDataPath();
+    const adapter = new InMemoryCredentialAdapter();
+    const host = await WorkspaceHost.open({ userDataPath, credentialAdapter: adapter });
+    host.store.saveModelConfig(MODEL_CONFIG);
+    await host.saveCredential(MODEL_CONFIG.configId, API_KEY_SEED);
+    const credentialRef = host.store.getModelConfig(MODEL_CONFIG.configId)?.credentialRef;
+    expect(credentialRef).toBeDefined();
+    vi.spyOn(host.store, "completeCredentialClear").mockImplementationOnce(() => {
+      throw new Error("private sqlite detail");
+    });
+
+    const error = await host.clearCredential(MODEL_CONFIG.configId).catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("credential_persistence_failed");
+    expect((error as Error).message).not.toContain(API_KEY_SEED);
+    expect(host.store.getModelConfig(MODEL_CONFIG.configId)?.credentialRef).toBeUndefined();
+    expect(host.store.getPendingCredentialClear(MODEL_CONFIG.configId)).toEqual({
+      configId: MODEL_CONFIG.configId,
+      credentialRef,
+    });
+    expect(adapter.has(credentialRef as string)).toBe(false);
+    host.close();
   });
 });

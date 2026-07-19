@@ -8,7 +8,8 @@
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3,keytar",
-    "smoke": "pnpm build && electron ./dist/main/smoke.js"
+    "smoke": "pnpm build && electron ./dist/main/smoke.js",
+    "smoke:electron": "pnpm run rebuild:native && pnpm run smoke"
   },
   "dependencies": {
     "@todex/contracts": "workspace:*",

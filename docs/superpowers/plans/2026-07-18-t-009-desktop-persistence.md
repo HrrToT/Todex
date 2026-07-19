@@ -58,7 +58,7 @@ Expected: FAIL because the desktop package/module does not exist.
 
 - [ ] **Step 3: Add workspace package and minimal host export**
 
-Create the desktop package with runtime dependencies `better-sqlite3`, `electron`, `keytar`, `zod`, and `@todex/contracts`; use `@electron/rebuild` as a development dependency. Add scripts `test`, `build`, `rebuild:native`, and `smoke`. Create strict TS configs that emit main/preload/smoke JavaScript to `dist`. Add `apps/desktop/**/*.ts` to root typecheck and `apps/desktop` to the Vitest workspace. Export only `DESKTOP_HOST_VERSION = "0.1.0"` from the initial main entry.
+Create the desktop package with runtime dependencies `better-sqlite3`, `electron`, `keytar`, `zod`, and `@todex/contracts`; use `@electron/rebuild` as a development dependency. Add scripts `test`, `build`, `rebuild:native`, low-level `smoke`, and the sole combined `smoke:electron` (`rebuild:native && smoke`). Create strict TS configs that emit main/preload/smoke JavaScript to `dist`. Add `apps/desktop/**/*.ts` to root typecheck and `apps/desktop` to the Vitest workspace. Export only `DESKTOP_HOST_VERSION = "0.1.0"` from the initial main entry.
 
 - [ ] **Step 4: Verify GREEN and commit**
 
@@ -126,7 +126,7 @@ Commit: `git add apps/desktop/src/main/credential-store.ts apps/desktop/src/main
 
 - [ ] **Step 1: Write failing IPC and shell tests**
 
-Use a fake `ipcMain.handle` recorder. Assert registration contains exactly the frozen project/command/run/approval/memory/credential channels, excludes credential read and generic SQL/filesystem channels, and rejects invalid input with fixed `invalid_ipc_input`. Assert BrowserWindow options are `contextIsolation: true` and `nodeIntegration: false`.
+Use a fake `ipcMain.handle` recorder. Assert registration contains exactly the frozen project/command/run/approval/memory/credential channels, excludes credential read and generic SQL/filesystem channels, and rejects invalid input with fixed `invalid_ipc_input`. Assert BrowserWindow options are `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true`, and that navigation/new windows are denied.
 
 - [ ] **Step 2: Verify RED**
 
@@ -140,7 +140,7 @@ Implement `registerTodexIpc(ipcMain, host)` with only the declared allowlist, Zo
 
 - [ ] **Step 4: Verify GREEN, native rebuild, and commit**
 
-Run: `pnpm.cmd --filter @todex/desktop test --run ipc.test.ts`; `pnpm.cmd --filter @todex/desktop rebuild:native`; `pnpm.cmd --filter @todex/desktop smoke`.
+Run: `pnpm.cmd --filter @todex/desktop test --run ipc.test.ts`; `pnpm.cmd --filter @todex/desktop smoke:electron`.
 
 Expected: tests pass and Electron loads both native modules. If rebuild/smoke fails, stop and report the exact native ABI failure; do not substitute a non-native credential/storage library.
 
@@ -152,7 +152,7 @@ Commit: `git add apps/desktop/src/main apps/desktop/test/ipc.test.ts; git commit
 
 - [ ] **Step 1: Run final commands**
 
-Run: `pnpm.cmd --filter @todex/desktop test --run`; `pnpm.cmd --filter @todex/desktop rebuild:native`; `pnpm.cmd --filter @todex/desktop smoke`; `pnpm.cmd test --run`; `pnpm.cmd typecheck`; `pnpm.cmd lint`; `pnpm.cmd build`; `git diff --check`; `git status --short`.
+Run: `pnpm.cmd --filter @todex/desktop test --run`; `pnpm.cmd --filter @todex/desktop smoke:electron`; `pnpm.cmd test --run`; `pnpm.cmd typecheck`; `pnpm.cmd lint`; `pnpm.cmd build`; `git diff --check`; `git status --short`.
 
 Expected: all pass, generated temporary DBs remain ignored, and no command output/report contains the seed API key.
 

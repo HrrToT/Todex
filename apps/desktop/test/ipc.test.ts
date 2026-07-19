@@ -15,6 +15,10 @@ class FakeIpcMain {
 
 class FakeBrowserWindow {
   static latestOptions: Record<string, unknown> | undefined;
+  readonly webContents = {
+    on: vi.fn(),
+    setWindowOpenHandler: vi.fn(),
+  };
 
   constructor(options: Record<string, unknown>) {
     FakeBrowserWindow.latestOptions = options;
@@ -99,14 +103,24 @@ describe("desktop IPC", () => {
     ).not.toContain("secret-value");
   });
 
-  it("creates a browser window without renderer Node access", () => {
-    createDesktopWindow(FakeBrowserWindow);
+  it("creates a sandboxed browser window that denies navigation and new windows", () => {
+    const window = createDesktopWindow(FakeBrowserWindow);
+    const fakeWindow = window as FakeBrowserWindow;
 
     expect(FakeBrowserWindow.latestOptions).toMatchObject({
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: true,
       },
     });
+    expect(fakeWindow.webContents.setWindowOpenHandler).toHaveBeenCalledOnce();
+    const openHandler = fakeWindow.webContents.setWindowOpenHandler.mock.calls[0]?.[0] as () => unknown;
+    expect(openHandler()).toEqual({ action: "deny" });
+    expect(fakeWindow.webContents.on).toHaveBeenCalledWith("will-navigate", expect.any(Function));
+    const navigationHandler = fakeWindow.webContents.on.mock.calls[0]?.[1] as (event: { preventDefault(): void }) => void;
+    const event = { preventDefault: vi.fn() };
+    navigationHandler(event);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 });

@@ -8,6 +8,10 @@ export const DESKTOP_HOST_VERSION = "0.1.0";
 
 export interface BrowserWindowLike {
   loadURL(url: string): Promise<void> | void;
+  readonly webContents: {
+    on(event: "will-navigate", listener: (event: { preventDefault(): void }) => void): void;
+    setWindowOpenHandler(handler: () => { action: "deny" }): void;
+  };
 }
 
 export interface BrowserWindowConstructor {
@@ -24,9 +28,12 @@ export function createDesktopWindow(
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       preload: preloadPath,
     },
   });
+  window.webContents.on("will-navigate", (event) => event.preventDefault());
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   void window.loadURL("data:text/html,<main></main>");
   return window;
 }
@@ -39,7 +46,7 @@ export async function startDesktopHost(): Promise<void> {
     credentialAdapter: new KeytarCredentialAdapter(),
   });
   registerTodexIpc(electron.ipcMain, host);
-  createDesktopWindow(electron.BrowserWindow);
+  createDesktopWindow(electron.BrowserWindow as unknown as BrowserWindowConstructor);
 }
 
 if (process.versions.electron && process.env.TODEX_START_MAIN !== "0") {

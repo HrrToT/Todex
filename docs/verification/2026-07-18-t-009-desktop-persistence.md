@@ -27,7 +27,7 @@ The Node ABI root run completed before Electron rebuilding and passed 18 test fi
 
 ## Persistence and Secret Boundary
 
-- Fresh migration records version 1; reopen is idempotent; schema version 999 fails closed with `unsupported_schema_version`.
+- Fresh migration records version 2; reopen is idempotent; schema version 999 fails closed with `unsupported_schema_version`.
 - Project persistence survives reopen. `model_configs` has no secret column. Trace events persist before reopen, order by sequence, and enforce unique `(run_id, sequence)`. Memory deletion is soft and removed from normal lists.
 - The in-memory credential seed is absent from exported project data, credential lifecycle DTOs, and the temporary SQLite file. No plaintext fallback exists.
 - Failing credential adapter operations map only to `credential_unavailable`; raw adapter text is not exposed.
@@ -39,7 +39,7 @@ Native scripts are constrained in `pnpm-workspace.yaml` to `better-sqlite3`, `ke
 
 1. Use the installed Python 3.12 path and force Node-oriented installation/rebuild before Vitest.
 2. Run desktop/root Vitest, typecheck, lint, and build with the Node ABI `better-sqlite3` artifact.
-3. Only after those checks, run `PYTHON=<Python312 path> pnpm.cmd --filter @todex/desktop rebuild:native`.
+3. Only after those checks, use `pnpm.cmd --filter @todex/desktop smoke:electron`; it explicitly runs `rebuild:native && smoke`. The low-level `smoke` script does not rebuild native modules.
 4. Electron rebuild reported `Rebuild Complete` for Electron `v36.9.5`; current Node was `v24.14.0`.
 
 The Electron diagnostic smoke reached production Keytar module loading, temporary `WorkspaceHost.open()` with actual SQLite opening/migration, and `registerTodexIpc`. It did not save or read a credential, call an LLM, execute a shell command, or access a selected workspace.
@@ -72,3 +72,11 @@ RED: new host tests failed because `saveCredential(configId, value)` and config-
 GREEN: `WorkspaceHost` now loads a `ModelConfigReference` by `configId`, saves a generated opaque reference to `model_configs.credential_ref` only after Keytar save succeeds, and clears that column only after Keytar delete succeeds. Reopen status resolves through the persisted ref. Adapter failure returns `credential_unavailable`, leaves the prior ref unchanged, and does not create a database fallback. IPC credential status/save/clear require `configId` and return no ref or secret. `SQLiteStore.listApprovals(projectId)` returns every approval state for audit export, while `listPendingApprovals` remains the IPC list behavior.
 
 Verification after the rework: `pnpm.cmd --filter @todex/desktop test --run credential-store.test.ts ipc.test.ts workspace-host.test.ts sqlite-store.test.ts` passed 4 files/18 tests. Root `pnpm.cmd test` passed 18 files/397 tests; root `pnpm.cmd typecheck`, `pnpm.cmd lint`, `pnpm.cmd build`, and `git diff --check` passed. The P1 implementation and this evidence are committed as `fix: persist credential references and approval audit`.
+
+## Final Review P1/P2 Rework (2026-07-19)
+
+RED: the added tests showed that a successful Keytar save leaked its newly generated reference when `replaceCredentialReference` threw, a successful Keytar deletion could leave a dead SQLite reference when its final persistence threw, and `saveVerification()` accepted a run/command pair from different projects. Window tests also showed missing sandbox/navigation/window-open protections, and the package test showed the absent `smoke:electron` composition.
+
+GREEN: SQLite schema version 2 adds `credential_clear_pending`, including a direct v1-to-v2 migration regression. Every credential save writes a new Keytar UUID; the same SQLite transaction switches the active reference and records the previous UUID for cleanup. If that transaction fails, the new UUID is compensated while the previous configured secret remains intact, and the error is only `credential_persistence_failed`. Clearing atomically removes the active `credential_ref` and records pending work before deleting Keytar; a final SQLite failure leaves no active dead reference and the pending record is reconciled on the next credential operation. `saveVerification()` reads both project ids inside its insert transaction and throws `verification_project_mismatch` before any insert. The window is sandboxed and rejects navigation/new windows. `smoke:electron` is exactly `rebuild:native && smoke`, while `smoke` remains a low-level build-and-launch command without rebuild.
+
+Node-ABI GREEN evidence: `pnpm.cmd --filter @todex/desktop test --run workspace-host.test.ts sqlite-store.test.ts ipc.test.ts package.test.ts` passed 4 files/22 tests. Final root `pnpm.cmd test --run` passed 19 files/403 tests; `pnpm.cmd typecheck`, `pnpm.cmd lint`, `pnpm.cmd build`, and `git diff --check` exited 0. Electron lifecycle/smoke was not re-run because the recorded `0xC0000005` environment exception remains controlled scope.

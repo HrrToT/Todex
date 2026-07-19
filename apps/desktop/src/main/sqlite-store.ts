@@ -15,7 +15,7 @@ import {
 } from "@todex/contracts";
 import { z } from "zod";
 
-const LATEST_SCHEMA_VERSION = 1;
+const LATEST_SCHEMA_VERSION = 2;
 
 const projectSchema = z
   .object({
@@ -66,6 +66,11 @@ export interface ProjectExport {
   readonly memories: readonly MemoryEntry[];
 }
 
+export interface PendingCredentialClear {
+  readonly configId: string;
+  readonly credentialRef: string;
+}
+
 type Row = Record<string, unknown>;
 
 export class SQLiteStore {
@@ -105,6 +110,7 @@ export class SQLiteStore {
       "verification_results",
       "approval_requests",
       "memory_entries",
+      "credential_clear_pending",
     ]);
     if (!allowedTables.has(tableName)) {
       throw new Error("unknown_table");
@@ -158,6 +164,13 @@ export class SQLiteStore {
   }
 
   saveModelConfig(modelConfig: ModelConfigReference): ModelConfigReference {
+    return this.replaceCredentialReference(modelConfig);
+  }
+
+  replaceCredentialReference(
+    modelConfig: ModelConfigReference,
+    previousCredentialRef?: string,
+  ): ModelConfigReference {
     const parsed = modelConfigSchema.parse(modelConfig);
     this.inTransaction(() => {
       this.database
@@ -175,6 +188,15 @@ export class SQLiteStore {
              updated_at = excluded.updated_at`,
         )
         .run({ ...parsed, projectId: parsed.projectId ?? null, credentialRef: parsed.credentialRef ?? null });
+      if (previousCredentialRef && previousCredentialRef !== parsed.credentialRef) {
+        this.database
+          .prepare(
+            `INSERT INTO credential_clear_pending (config_id, credential_ref, created_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT(config_id) DO UPDATE SET credential_ref = excluded.credential_ref, created_at = excluded.created_at`,
+          )
+          .run(parsed.configId, previousCredentialRef, parsed.updatedAt);
+      }
     });
     return parsed;
   }
@@ -201,6 +223,45 @@ export class SQLiteStore {
       )
       .get(configId) as Row | undefined;
     return row ? this.toModelConfig(row) : undefined;
+  }
+
+  stageCredentialClear(configId: string, updatedAt: string): PendingCredentialClear | undefined {
+    return this.inTransaction(() => {
+      const config = this.getModelConfig(configId);
+      if (!config?.credentialRef) {
+        return undefined;
+      }
+      const pending = { configId, credentialRef: config.credentialRef };
+      this.database
+        .prepare("UPDATE model_configs SET credential_ref = NULL, updated_at = ? WHERE config_id = ?")
+        .run(updatedAt, configId);
+      this.database
+        .prepare(
+          `INSERT INTO credential_clear_pending (config_id, credential_ref, created_at)
+           VALUES (@configId, @credentialRef, @createdAt)
+           ON CONFLICT(config_id) DO UPDATE SET credential_ref = excluded.credential_ref, created_at = excluded.created_at`,
+        )
+        .run({ ...pending, createdAt: updatedAt });
+      return pending;
+    });
+  }
+
+  getPendingCredentialClear(configId: string): PendingCredentialClear | undefined {
+    const row = this.database
+      .prepare("SELECT config_id, credential_ref FROM credential_clear_pending WHERE config_id = ?")
+      .get(configId) as Row | undefined;
+    return row
+      ? {
+          configId: z.string().min(1).parse(row.config_id),
+          credentialRef: z.string().min(1).parse(row.credential_ref),
+        }
+      : undefined;
+  }
+
+  completeCredentialClear(configId: string): void {
+    this.inTransaction(() => {
+      this.database.prepare("DELETE FROM credential_clear_pending WHERE config_id = ?").run(configId);
+    });
   }
 
   saveCommand(command: ConfiguredCommand): ConfiguredCommand {
@@ -325,6 +386,15 @@ export class SQLiteStore {
   saveVerification(result: VerificationResult): VerificationResult {
     const parsed = verificationResultSchema.parse(result);
     this.inTransaction(() => {
+      const run = this.database
+        .prepare("SELECT project_id FROM runs WHERE run_id = ?")
+        .get(parsed.runId) as { project_id: string } | undefined;
+      const command = this.database
+        .prepare("SELECT project_id FROM configured_commands WHERE command_id = ?")
+        .get(parsed.commandId) as { project_id: string } | undefined;
+      if (run && command && run.project_id !== command.project_id) {
+        throw new Error("verification_project_mismatch");
+      }
       this.database
         .prepare(
           `INSERT INTO verification_results (
@@ -487,7 +557,7 @@ export class SQLiteStore {
       database.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
     }
 
-    const version = (database
+    let version = (database
       .prepare("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations")
       .get() as { version: number }).version;
     if (version > LATEST_SCHEMA_VERSION) {
@@ -497,8 +567,9 @@ export class SQLiteStore {
       return;
     }
 
-    database.transaction(() => {
-      database.exec(`
+    if (version === 0) {
+      database.transaction(() => {
+        database.exec(`
         CREATE TABLE projects (
           project_id TEXT PRIMARY KEY,
           workspace_root TEXT NOT NULL,
@@ -586,15 +657,31 @@ export class SQLiteStore {
         CREATE INDEX idx_verifications_run ON verification_results(run_id, verification_id);
         CREATE INDEX idx_approvals_run ON approval_requests(run_id, created_at);
         CREATE INDEX idx_memory_project_active ON memory_entries(project_id, deleted_at, updated_at DESC);
-      `);
-      database
-        .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
-        .run(LATEST_SCHEMA_VERSION, new Date().toISOString());
-    })();
+        `);
+        database
+          .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
+          .run(1, new Date().toISOString());
+      })();
+      version = 1;
+    }
+    if (version === 1) {
+      database.transaction(() => {
+        database.exec(`
+          CREATE TABLE credential_clear_pending (
+            config_id TEXT PRIMARY KEY REFERENCES model_configs(config_id) ON DELETE CASCADE,
+            credential_ref TEXT NOT NULL,
+            created_at TEXT NOT NULL
+          );
+        `);
+        database
+          .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
+          .run(2, new Date().toISOString());
+      })();
+    }
   }
 
-  private inTransaction(operation: () => void): void {
-    this.database.transaction(operation)();
+  private inTransaction<T>(operation: () => T): T {
+    return this.database.transaction(operation)();
   }
 
   private toProject(row: Row): DesktopProject {
