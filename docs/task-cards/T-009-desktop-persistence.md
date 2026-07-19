@@ -1,6 +1,6 @@
 # T-009: Desktop Persistence and Secure Host
 
-Status: ready for plan review
+Status: implementation complete with a controlled Electron lifecycle validation exception
 Responsible model: implementation agent
 Lead review: Codex
 Branch: `feat/t-009-desktop-persistence`
@@ -30,3 +30,11 @@ Only the desktop package, root workspace/typecheck/Vitest integration needed to 
 - Renderer receives only the frozen typed IPC allowlist; no arbitrary SQL, path, Node, or credential-read API.
 - Electron window uses `contextIsolation: true` and `nodeIntegration: false`.
 - Follow the plan's RED/GREEN order, commit per task, record actual evidence, and do not push/create a PR/merge main.
+
+## Completion Record (2026-07-19)
+
+- Implementation commits: `330e9e2`, `b9ad555`, `b8dbaea`, `fd758bb`, and `acd7c21`. No push, PR, or merge was created.
+- Node ABI verification ran before Electron ABI rebuilding: desktop persistence, credential/host, and IPC tests passed; the root Vitest run passed 18 files and 394 tests. Typecheck, lint, recursive build, and `git diff --check` also passed when run.
+- `pnpm-workspace.yaml` allowlists only `better-sqlite3`, `keytar`, `electron`, and `esbuild` build scripts. `better-sqlite3` is rebuilt for Node before Vitest, then `electron-rebuild -f -w better-sqlite3,keytar` targets Electron only immediately before smoke.
+- Electron rebuild completed. A diagnostic Electron smoke reached real Keytar module loading, `WorkspaceHost.open()` with a temporary SQLite database, and IPC registration. The current environment then reproducibly crashed during Electron app lifecycle/shutdown with `0xC0000005`, including an independent `app.whenReady()` script. This does not establish BrowserWindow lifecycle behavior; T-010/T-012 own interactive host and packaging validation.
+- The permanent smoke never writes a credential, calls a real LLM, runs a command, or accesses a selected project workspace. It loads the production adapters, opens temporary userData SQLite, registers IPC, closes, and removes the temporary directory.

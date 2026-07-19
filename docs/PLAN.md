@@ -526,6 +526,12 @@ Expected: PASS. Add a test that exported trace text contains no credential value
 Run: `git add apps/desktop`
 Run: `git commit -m "feat: add desktop persistence and credential adapters"`
 
+#### T-009 Delivery Record (2026-07-19)
+
+Implementation is recorded on `feat/t-009-desktop-persistence` in `330e9e2`, `b9ad555`, `b8dbaea`, `fd758bb`, and `acd7c21`. SQLite persistence, fail-closed credential adapters, secure typed IPC, preload, and a minimal Electron host were implemented without changing Harness Core, contracts, examples, CI, demo web, installer, or release workflow. Node ABI validation ran before Electron ABI rebuilding: the root Vitest run passed 18 files and 394 tests; typecheck, lint, recursive build, and diff checks passed when run. The native workspace allowlist permits only `better-sqlite3`, `keytar`, `electron`, and `esbuild` scripts.
+
+`electron-rebuild -f -w better-sqlite3,keytar` completed for Electron `v36.9.5`. The diagnostic smoke reached production Keytar module load, temporary SQLite host open, and IPC registration. The current execution environment reproducibly crashes in Electron lifecycle/shutdown with `0xC0000005`, including a standalone `app.whenReady()` probe. This is recorded as a controlled exception, not a successful interactive host assertion; T-010/T-012 must validate lifecycle and BrowserWindow behavior on a suitable interactive environment. No credential was written or read in smoke, and no real model, shell, or project action ran.
+
 ### Task 10: T-010 实现共享工作台 UI 与桌面主窗口
 
 **依赖：** T-001、T-009。

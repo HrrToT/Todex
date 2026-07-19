@@ -127,6 +127,12 @@ IPC tests use fake Electron IPC registration and fake host services. They prove 
 
 The desktop package includes Electron, `better-sqlite3`, `keytar`, and `@electron/rebuild` only where needed. A dedicated Windows smoke command rebuilds native dependencies for the installed Electron ABI, starts the minimal main process with a temporary application-data directory, opens/migrates a temporary database, loads the credential adapter, registers IPC, and exits without a real model call or a real project command. The smoke may query credential availability but must not write a real API key.
 
+### Native ABI Execution Record (2026-07-19)
+
+`better-sqlite3` has separate Node and Electron ABI products. The repeatable order is: allow the declared native build scripts, rebuild for Node, run Vitest and root checks, then run `electron-rebuild -f -w better-sqlite3,keytar` immediately before Electron smoke. Vitest must not run after the Electron rebuild because it requires the Node ABI product.
+
+The T-009 smoke loads the production Keytar adapter without saving or reading a credential, opens and migrates temporary `userData/todex.sqlite`, registers the fixed IPC allowlist, closes the store, and deletes the temporary directory. On this current Windows execution environment, a separate minimal Electron script that only called `app.whenReady()` reproducibly exited with `0xC0000005`. T-009 therefore records successful native module, SQLite, and IPC boundary reachability but does not claim interactive Electron lifecycle or BrowserWindow validation. T-010/T-012 must validate the interactive host and packaged lifecycle on an environment where Electron lifecycle completes.
+
 ## Acceptance Criteria
 
 1. Fresh and migrated databases preserve contract-valid project, command, Run, trace, verification, approval, and memory data across reopen.

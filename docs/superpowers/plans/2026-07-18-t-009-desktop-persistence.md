@@ -17,6 +17,7 @@
 - Production database is `app.getPath("userData")/todex.sqlite`; tests inject a temporary directory.
 - Renderer has no Node integration and receives only the declared IPC allowlist. No generic SQL, filesystem, IPC, or credential-read method exists.
 - Do not add React UI, real LLM calls, project shell execution, file-tool adapters, demo-web work, installer packaging, or release workflow.
+- Native verification order is mandatory: Node ABI build and Vitest/root checks first, then Electron ABI rebuild and smoke. Do not run Vitest after Electron rebuilding `better-sqlite3`.
 
 ## File Map
 
@@ -160,6 +161,10 @@ Expected: all pass, generated temporary DBs remain ignored, and no command outpu
 Record every RED/GREEN command, database migration behavior, no-key proof, fail-closed credential proof, IPC allowlist proof, native rebuild/smoke environment versions, assumptions, and controlled exceptions.
 
 Commit: `git add docs/PLAN.md docs/AGENT_LOG.md docs/task-cards/T-009-desktop-persistence.md docs/verification/2026-07-18-t-009-desktop-persistence.md; git commit -m "docs: record T-009 persistence verification"`
+
+### Execution Update (2026-07-19)
+
+Tasks 1-4 were implemented with the required RED/GREEN evidence and independent commits. Native build scripts are constrained by the workspace allowlist. Node ABI tests completed before Electron rebuilding. Electron rebuild completed, and the smoke reached Keytar module loading, temporary SQLite host opening, and IPC registration. The process then hit a reproducible current-environment Electron lifecycle/shutdown `0xC0000005`; this controlled exception is documented rather than hidden. Interactive lifecycle and BrowserWindow validation move to T-010/T-012.
 
 ## Plan Self-Review
 

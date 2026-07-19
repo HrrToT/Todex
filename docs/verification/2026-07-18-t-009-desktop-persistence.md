@@ -1,0 +1,64 @@
+# T-009 Desktop Persistence Verification
+
+Date recorded: 2026-07-19
+
+## Scope and Commits
+
+The implementation was limited to `apps/desktop`, root TypeScript/Vitest/native-build wiring, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, and T-009 evidence. Harness Core, contracts, examples, CI, demo web, installer, and release flow were not modified.
+
+1. `330e9e2` `chore: add desktop host workspace`
+2. `b9ad555` `feat: persist desktop state in sqlite`
+3. `b8dbaea` `feat: add desktop credential and host adapters`
+4. `fd758bb` `feat: expose secure desktop host ipc`
+5. `acd7c21` `fix: remove unused desktop ipc import`
+
+No push, pull request, or merge was performed.
+
+## RED and GREEN Evidence
+
+| Task | RED evidence | GREEN evidence |
+| --- | --- | --- |
+| Workspace | `bootstrap.test.ts` failed because `src/main/index.ts` was absent. | Desktop bootstrap test passed; root typecheck passed. |
+| SQLite | `sqlite-store.test.ts` failed because `SQLiteStore` was absent. | `pnpm.cmd --filter @todex/desktop test --run sqlite-store.test.ts` passed 8/8. |
+| Credentials and host | Credential and host tests failed because their modules were absent. | `credential-store.test.ts` and `workspace-host.test.ts` passed 4/4; root typecheck passed. |
+| IPC and shell | `ipc.test.ts` failed because `ipc.ts` was absent. | `ipc.test.ts` passed 3/3; fixed allowlist, invalid input, absent credential read, and window security flags were asserted. |
+
+The Node ABI root run completed before Electron rebuilding and passed 18 test files and 394 tests. At that point root typecheck also passed.
+
+## Persistence and Secret Boundary
+
+- Fresh migration records version 1; reopen is idempotent; schema version 999 fails closed with `unsupported_schema_version`.
+- Project persistence survives reopen. `model_configs` has no secret column. Trace events persist before reopen, order by sequence, and enforce unique `(run_id, sequence)`. Memory deletion is soft and removed from normal lists.
+- The in-memory credential seed is absent from exported project data, credential lifecycle DTOs, and the temporary SQLite file. No plaintext fallback exists.
+- Failing credential adapter operations map only to `credential_unavailable`; raw adapter text is not exposed.
+- IPC registers only the fixed project, command, run, approval, memory, and credential status/save/clear operations. No generic SQL, filesystem, Node, or credential-read channel exists.
+
+## Dual ABI Native Evidence
+
+Native scripts are constrained in `pnpm-workspace.yaml` to `better-sqlite3`, `keytar`, `electron`, and `esbuild`.
+
+1. Use the installed Python 3.12 path and force Node-oriented installation/rebuild before Vitest.
+2. Run desktop/root Vitest, typecheck, lint, and build with the Node ABI `better-sqlite3` artifact.
+3. Only after those checks, run `PYTHON=<Python312 path> pnpm.cmd --filter @todex/desktop rebuild:native`.
+4. Electron rebuild reported `Rebuild Complete` for Electron `v36.9.5`; current Node was `v24.14.0`.
+
+The Electron diagnostic smoke reached production Keytar module loading, temporary `WorkspaceHost.open()` with actual SQLite opening/migration, and `registerTodexIpc`. It did not save or read a credential, call an LLM, execute a shell command, or access a selected workspace.
+
+## Controlled Exception
+
+The current execution environment reproducibly exits Electron with `0xC0000005` during app lifecycle/shutdown. A minimal independent script that only logged before `app.whenReady()` and then awaited it also failed. GPU disabling did not change the boundary. The native smoke therefore proves native module loading, temporary SQLite opening, and IPC registration by reached markers, but does not prove `app.whenReady()`, BrowserWindow, or interactive shutdown behavior in this environment.
+
+T-010/T-012 must validate interactive Electron lifecycle, BrowserWindow behavior, and packaged application shutdown on a suitable environment. This exception is not a fallback, dependency substitution, or security-boundary relaxation.
+
+## Final Commands Observed
+
+- `pnpm.cmd --filter @todex/desktop test --run sqlite-store.test.ts`: pass, 8/8.
+- `pnpm.cmd --filter @todex/desktop test --run credential-store.test.ts workspace-host.test.ts`: pass, 4/4.
+- `pnpm.cmd --filter @todex/desktop test --run ipc.test.ts`: pass, 3/3.
+- `pnpm.cmd test --run`: pass before Electron rebuild, 18 files/394 tests.
+- `pnpm.cmd typecheck`: pass before Electron rebuild.
+- `pnpm.cmd lint`: pass after the final IPC import cleanup.
+- `pnpm.cmd build`: pass after the final IPC import cleanup.
+- `git diff --check`: pass before evidence edits.
+
+The permanent smoke contains no diagnostic marker. Its native boundary is intentionally limited to adapter loading, temporary host/store open, IPC registration, close, and cleanup. No command in this record contains an API key value.
