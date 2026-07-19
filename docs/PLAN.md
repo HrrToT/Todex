@@ -540,6 +540,8 @@ CI P1 rework: native `keytar` is now a lazy, cached production-adapter dependenc
 
 ### Task 10: T-010 实现共享工作台 UI 与桌面主窗口
 
+Implementation update (2026-07-19): renderer-local components are used under `apps/desktop/src/renderer/` instead of adding a new `packages/ui` workspace. The verified scope is a deterministic React/Vite workbench, typed lowercase preload approval adaptation, and component flows only; real model, shell, filesystem, patch, credential, and Electron lifecycle work remain outside T-010.
+
 **依赖：** T-001、T-009。
 **建议责任：** Qwen 负责 UI components；Codex 审查 Open Design 和可访问性。
 
@@ -547,14 +549,10 @@ CI P1 rework: native `keytar` is now a lazy, cached production-adapter dependenc
 **状态：** 设计已批准，实施计划等待审阅。
 
 **Files:**
-- Create: `packages/ui/package.json`
-- Create: `packages/ui/src/WorkspacePanel.tsx`
-- Create: `packages/ui/src/TaskWorkbench.tsx`
-- Create: `packages/ui/src/TraceTimeline.tsx`
-- Create: `packages/ui/src/ApprovalCard.tsx`
-- Create: `packages/ui/src/DiffPanel.tsx`
 - Create: `apps/desktop/src/renderer/App.tsx`
 - Create: `apps/desktop/src/renderer/main.tsx`
+- Create: `apps/desktop/src/renderer/run-controller.ts`
+- Create: `apps/desktop/src/renderer/styles.css`
 - Create: `apps/desktop/test/workbench.spec.tsx`
 
 - [ ] **Step 1: Write failing workbench UI tests**

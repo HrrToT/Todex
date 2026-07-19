@@ -1,9 +1,11 @@
 # Todex Agent 开发日志
 
 状态：active
-最后更新：2026-07-17
+最后更新：2026-07-19
 
 本日志按时间顺序追加。每条记录包含稳定阶段/任务编号、技能、关键 prompt 或上下文、辅助模型输出或 commit、项目负责人的介入和可复用的教训。早期 brainstorming 对话没有保留精确时分秒，历史记录如实标注 `time-not-captured`；从本次格式修订起，新记录必须使用 ISO 8601 时间戳。
+
+当前 T-010 记录：`docs/verification/2026-07-19-t-010-codex-style-workbench.md`；renderer 实现已通过 411 个全仓测试、typecheck、lint 与 build，待审查、PR 与 CI。
 
 | 时间戳 | 阶段 / 任务 | 触发技能 / 协作 | 关键 prompt / context | 输出、commit 或证据 | 人工介入 | 学到的教训 |
 | --- | --- | --- | --- | --- | --- | --- |
