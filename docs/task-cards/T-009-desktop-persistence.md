@@ -50,3 +50,7 @@ Only the desktop package, root workspace/typecheck/Vitest integration needed to 
 
 - RED reproduced a Keytar-success/SQLite-failure orphan, a Keytar-delete/SQLite-completion failure, a verification result joining a run and command from different projects, missing sandbox/navigation protections, and the missing combined Electron smoke script.
 - GREEN adds schema version 2 with recoverable `credential_clear_pending`, fixed `credential_persistence_failed` errors without a key, an in-transaction `verification_project_mismatch` check before insert, and `sandbox: true` plus `will-navigate`/new-window denial. Targeted Node-ABI desktop tests passed 4 files/22 tests; final root Node-ABI verification passed 19 files/403 tests plus `typecheck`, `lint`, recursive `build`, and `git diff --check`. Electron lifecycle was intentionally not started because of the recorded `0xC0000005` exception.
+
+## CI P1 Rework (2026-07-19)
+
+- `credential-store.ts` must never import the native `keytar` module at module evaluation time. The Keytar adapter lazily imports and caches it only on real `save`, `read`, or `remove`; fake adapter tests and all host/import paths remain loadable on Linux runners without `libsecret`. Final Node-ABI verification passed 19 files/405 tests plus typecheck, lint, recursive build, and diff check.

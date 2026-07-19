@@ -1,4 +1,18 @@
-import keytar from "keytar";
+interface KeytarModule {
+  setPassword(service: string, account: string, password: string): Promise<void>;
+  getPassword(service: string, account: string): Promise<string | null>;
+  deletePassword(service: string, account: string): Promise<boolean>;
+}
+
+let keytarModulePromise: Promise<KeytarModule> | undefined;
+
+function loadKeytar(): Promise<KeytarModule> {
+  keytarModulePromise ??= import("keytar").then((module) => {
+    const imported = module as unknown as { readonly default?: KeytarModule };
+    return imported.default ?? (module as unknown as KeytarModule);
+  });
+  return keytarModulePromise;
+}
 
 export interface CredentialAdapter {
   save(credentialRef: string, apiKey: string): Promise<void>;
@@ -17,14 +31,17 @@ export interface CredentialStoreOptions {
 
 export class KeytarCredentialAdapter implements CredentialAdapter {
   async save(credentialRef: string, apiKey: string): Promise<void> {
+    const keytar = await loadKeytar();
     await keytar.setPassword("Todex", credentialRef, apiKey);
   }
 
   async read(credentialRef: string): Promise<string | undefined> {
+    const keytar = await loadKeytar();
     return (await keytar.getPassword("Todex", credentialRef)) ?? undefined;
   }
 
   async remove(credentialRef: string): Promise<void> {
+    const keytar = await loadKeytar();
     await keytar.deletePassword("Todex", credentialRef);
   }
 }

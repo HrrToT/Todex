@@ -1,9 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  CredentialStore,
-  type CredentialAdapter,
-} from "../src/main/credential-store.js";
+import type { CredentialAdapter } from "../src/main/credential-store.js";
 
 const API_KEY_SEED = "secret-value";
 
@@ -41,8 +38,50 @@ class FailingCredentialAdapter implements CredentialAdapter {
   }
 }
 
+afterEach(() => {
+  vi.doUnmock("keytar");
+  vi.resetModules();
+});
+
 describe("CredentialStore", () => {
+  it("uses an injected fake adapter without loading keytar", async () => {
+    vi.doMock("keytar", () => {
+      throw new Error("keytar must not load for a fake adapter");
+    });
+    const { CredentialStore } = await import("../src/main/credential-store.js");
+    const adapter = new InMemoryCredentialAdapter();
+    const store = new CredentialStore({ adapter });
+
+    await expect(store.save("opaque-credential-ref", API_KEY_SEED)).resolves.toEqual({ configured: true });
+
+    expect(adapter.get("opaque-credential-ref")).toBe(API_KEY_SEED);
+  });
+
+  it("loads keytar only for production adapter use and caches the module", async () => {
+    const setPassword = vi.fn().mockResolvedValue(undefined);
+    const getPassword = vi.fn().mockResolvedValue("secret-value");
+    const deletePassword = vi.fn().mockResolvedValue(true);
+    let keytarLoads = 0;
+    vi.doMock("keytar", () => {
+      keytarLoads += 1;
+      return { default: { setPassword, getPassword, deletePassword } };
+    });
+    const { KeytarCredentialAdapter } = await import("../src/main/credential-store.js");
+    const adapter = new KeytarCredentialAdapter();
+
+    expect(keytarLoads).toBe(0);
+    await adapter.save("credential-ref", API_KEY_SEED);
+    await adapter.read("credential-ref");
+    await adapter.remove("credential-ref");
+
+    expect(keytarLoads).toBe(1);
+    expect(setPassword).toHaveBeenCalledWith("Todex", "credential-ref", API_KEY_SEED);
+    expect(getPassword).toHaveBeenCalledWith("Todex", "credential-ref");
+    expect(deletePassword).toHaveBeenCalledWith("Todex", "credential-ref");
+  });
+
   it("returns only redacted lifecycle DTOs", async () => {
+    const { CredentialStore } = await import("../src/main/credential-store.js");
     const adapter = new InMemoryCredentialAdapter();
     const store = new CredentialStore({ adapter });
     const credentialRef = "opaque-credential-ref";
@@ -62,6 +101,7 @@ describe("CredentialStore", () => {
   });
 
   it("fails closed without exposing adapter errors", async () => {
+    const { CredentialStore } = await import("../src/main/credential-store.js");
     const store = new CredentialStore({ adapter: new FailingCredentialAdapter() });
 
     await expect(store.save("opaque-credential-ref", API_KEY_SEED)).rejects.toThrow("credential_unavailable");
