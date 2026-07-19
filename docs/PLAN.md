@@ -543,6 +543,9 @@ CI P1 rework: native `keytar` is now a lazy, cached production-adapter dependenc
 **依赖：** T-001、T-009。
 **建议责任：** Qwen 负责 UI components；Codex 审查 Open Design 和可访问性。
 
+冻结设计与实施计划：[T-010 设计](superpowers/specs/2026-07-19-t-010-codex-style-workbench-design.md)、[T-010 实施计划](superpowers/plans/2026-07-19-t-010-codex-style-workbench.md)、[任务卡](task-cards/T-010-codex-style-workbench.md)。T-010 实现深色 Codex 风格 Renderer、受控 Mock Run 和 T-009 typed IPC 展示边界；不实现真实 LLM、shell、文件修改或安装包。
+**状态：** 设计已批准，实施计划等待审阅。
+
 **Files:**
 - Create: `packages/ui/package.json`
 - Create: `packages/ui/src/WorkspacePanel.tsx`
