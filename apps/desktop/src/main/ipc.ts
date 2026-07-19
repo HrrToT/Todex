@@ -1,11 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import {
-  approvalRequestSchema,
-  configuredCommandSchema,
-  memoryEntrySchema,
-  type ApprovalScope,
-} from "@todex/contracts";
+import { configuredCommandSchema, memoryEntrySchema, type ApprovalScope } from "@todex/contracts";
 import { z } from "zod";
 
 import type { WorkspaceHost } from "./workspace-host.js";
