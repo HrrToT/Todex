@@ -10,6 +10,7 @@ export default tseslint.config(
       "**/out/**",
       "**/coverage/**",
       "**/node_modules/**",
+      ".pnpm-store/**",
       ".todex/**",
       "release/**",
     ],
