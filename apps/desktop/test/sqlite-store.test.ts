@@ -1,0 +1,279 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import Database from "better-sqlite3";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { SQLiteStore } from "../src/main/sqlite-store.js";
+
+const TEMP_DIRECTORIES: string[] = [];
+const PROJECT = {
+  projectId: "project-1",
+  workspaceRoot: "C:\\workspace\\one",
+  displayName: "Workspace One",
+  profileJson: "{}",
+  createdAt: "2026-07-18T00:00:00.000Z",
+  updatedAt: "2026-07-18T00:00:00.000Z",
+};
+
+function createDatabasePath(): string {
+  const directory = mkdtempSync(join(tmpdir(), "todex-sqlite-test-"));
+  TEMP_DIRECTORIES.push(directory);
+  return join(directory, "todex.sqlite");
+}
+
+afterEach(() => {
+  for (const directory of TEMP_DIRECTORIES.splice(0)) {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+describe("SQLiteStore", () => {
+  it("migrates a fresh database to version 2 and reopens idempotently", () => {
+    const databasePath = createDatabasePath();
+    const first = SQLiteStore.open({ databasePath });
+
+    expect(first.getMigrationVersion()).toBe(2);
+    first.close();
+
+    const reopened = SQLiteStore.open({ databasePath });
+    expect(reopened.getMigrationVersion()).toBe(2);
+    reopened.close();
+  });
+
+  it("upgrades a version 1 database with recoverable credential-clear state", () => {
+    const databasePath = createDatabasePath();
+    const database = new Database(databasePath);
+    database.exec(`
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+      CREATE TABLE model_configs (
+        config_id TEXT PRIMARY KEY,
+        project_id TEXT,
+        base_url TEXT NOT NULL,
+        model TEXT NOT NULL,
+        parameters_json TEXT NOT NULL,
+        credential_ref TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO schema_migrations (version, applied_at) VALUES (1, '2026-07-19T00:00:00.000Z');
+    `);
+    database.close();
+
+    const store = SQLiteStore.open({ databasePath });
+
+    expect(store.getMigrationVersion()).toBe(2);
+    expect(store.listColumns("credential_clear_pending")).toContain("credential_ref");
+    store.close();
+  });
+
+  it("fails closed for a database newer than this host supports", () => {
+    const databasePath = createDatabasePath();
+    const database = new Database(databasePath);
+    database.exec(
+      "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL); INSERT INTO schema_migrations (version, applied_at) VALUES (999, '2026-07-18T00:00:00.000Z');",
+    );
+    database.close();
+
+    expect(() => SQLiteStore.open({ databasePath })).toThrow("unsupported_schema_version");
+  });
+
+  it("persists projects across store instances", () => {
+    const databasePath = createDatabasePath();
+    const first = SQLiteStore.open({ databasePath });
+    first.saveProject(PROJECT);
+    first.close();
+
+    const reopened = SQLiteStore.open({ databasePath });
+    expect(reopened.getProject(PROJECT.projectId)).toEqual(PROJECT);
+    reopened.close();
+  });
+
+  it("never creates an api_key column for model configurations", () => {
+    const store = SQLiteStore.open({ databasePath: createDatabasePath() });
+
+    expect(store.listColumns("model_configs")).not.toContain("api_key");
+    store.close();
+  });
+
+  it("commits appended traces in sequence before a later reopen", () => {
+    const databasePath = createDatabasePath();
+    const first = SQLiteStore.open({ databasePath });
+    first.saveProject(PROJECT);
+    first.saveRun({
+      runId: "run-1",
+      projectId: PROJECT.projectId,
+      taskText: "Inspect the project",
+      status: "running",
+      startedAt: "2026-07-18T00:00:00.000Z",
+      repairAttempts: 0,
+    });
+    first.appendTrace({
+      eventId: "trace-2",
+      runId: "run-1",
+      sequence: 2,
+      type: "tool_completed",
+      timestamp: "2026-07-18T00:00:02.000Z",
+      payloadSummary: "second event",
+    });
+    first.appendTrace({
+      eventId: "trace-1",
+      runId: "run-1",
+      sequence: 1,
+      type: "action_requested",
+      timestamp: "2026-07-18T00:00:01.000Z",
+      payloadSummary: "first event",
+    });
+    first.close();
+
+    const reopened = SQLiteStore.open({ databasePath });
+    expect(reopened.listTraces("run-1").map((trace) => trace.sequence)).toEqual([1, 2]);
+    reopened.close();
+  });
+
+  it("rejects duplicate trace sequences for the same run", () => {
+    const store = SQLiteStore.open({ databasePath: createDatabasePath() });
+    store.saveProject(PROJECT);
+    store.saveRun({
+      runId: "run-1",
+      projectId: PROJECT.projectId,
+      taskText: "Inspect the project",
+      status: "running",
+      startedAt: "2026-07-18T00:00:00.000Z",
+      repairAttempts: 0,
+    });
+    const trace = {
+      eventId: "trace-1",
+      runId: "run-1",
+      sequence: 1,
+      type: "action_requested" as const,
+      timestamp: "2026-07-18T00:00:01.000Z",
+      payloadSummary: "event",
+    };
+    store.appendTrace(trace);
+
+    expect(() => store.appendTrace({ ...trace, eventId: "trace-2" })).toThrow();
+    store.close();
+  });
+
+  it("soft deletes memories from normal project lists", () => {
+    const store = SQLiteStore.open({ databasePath: createDatabasePath() });
+    store.saveProject(PROJECT);
+    store.saveMemory({
+      memoryId: "memory-1",
+      projectId: PROJECT.projectId,
+      kind: "project_convention",
+      trustLevel: "verified",
+      content: "Use strict TypeScript.",
+      sourceTraceIds: [],
+      createdAt: "2026-07-18T00:00:00.000Z",
+      updatedAt: "2026-07-18T00:00:00.000Z",
+    });
+    store.deleteMemory("memory-1", "2026-07-18T00:01:00.000Z");
+
+    expect(store.listMemories(PROJECT.projectId)).toEqual([]);
+    store.close();
+  });
+
+  it("keeps in-memory API key seed out of exported project data", () => {
+    const store = SQLiteStore.open({ databasePath: createDatabasePath() });
+    store.saveProject(PROJECT);
+    const apiKeySeed = "API_KEY=secret-value";
+
+    const exported = store.exportProject(PROJECT.projectId);
+
+    expect(JSON.stringify(exported)).not.toContain(apiKeySeed);
+    expect(JSON.stringify(exported)).not.toContain("secret-value");
+    store.close();
+  });
+
+  it("exports approvals in terminal states for project audit history", () => {
+    const store = SQLiteStore.open({ databasePath: createDatabasePath() });
+    store.saveProject(PROJECT);
+    store.saveRun({
+      runId: "run-audit",
+      projectId: PROJECT.projectId,
+      taskText: "Audit approvals",
+      status: "completed",
+      startedAt: "2026-07-19T00:00:00.000Z",
+      endedAt: "2026-07-19T00:01:00.000Z",
+      repairAttempts: 0,
+    });
+    store.saveApproval({
+      approvalId: "approval-approved",
+      runId: "run-audit",
+      actionId: "action-1",
+      tool: "run_shell_command_with_approval",
+      riskReasons: ["user_confirmation_required"],
+      fingerprint: "approved-fingerprint",
+      state: "approved",
+      decision: "once",
+      createdAt: "2026-07-19T00:00:00.000Z",
+      decidedAt: "2026-07-19T00:00:30.000Z",
+    });
+    store.saveApproval({
+      approvalId: "approval-denied",
+      runId: "run-audit",
+      actionId: "action-2",
+      tool: "run_shell_command_with_approval",
+      riskReasons: ["user_confirmation_required"],
+      fingerprint: "denied-fingerprint",
+      state: "denied",
+      decision: "deny",
+      createdAt: "2026-07-19T00:00:00.000Z",
+      decidedAt: "2026-07-19T00:00:40.000Z",
+    });
+
+    expect(store.exportProject(PROJECT.projectId).approvals.map((approval) => approval.approvalId)).toEqual([
+      "approval-approved",
+      "approval-denied",
+    ]);
+    store.close();
+  });
+
+  it("rejects a verification whose run and configured command belong to different projects", () => {
+    const store = SQLiteStore.open({ databasePath: createDatabasePath() });
+    const otherProject = {
+      ...PROJECT,
+      projectId: "project-2",
+      workspaceRoot: "C:\\workspace\\two",
+      displayName: "Workspace Two",
+    };
+    store.saveProject(PROJECT);
+    store.saveProject(otherProject);
+    store.saveRun({
+      runId: "run-project-1",
+      projectId: PROJECT.projectId,
+      taskText: "Run verification",
+      status: "completed",
+      startedAt: "2026-07-19T00:00:00.000Z",
+      endedAt: "2026-07-19T00:01:00.000Z",
+      repairAttempts: 0,
+    });
+    store.saveCommand({
+      commandId: "command-project-2",
+      projectId: otherProject.projectId,
+      purpose: "test",
+      argv: ["pnpm", "test"],
+      workingDirectory: otherProject.workspaceRoot,
+      timeoutMs: 60_000,
+      confirmedByUser: true,
+    });
+
+    expect(() =>
+      store.saveVerification({
+        verificationId: "verification-cross-project",
+        runId: "run-project-1",
+        commandId: "command-project-2",
+        classification: "passed",
+        exitCode: 0,
+        durationMs: 100,
+        failureSummary: "",
+        relatedPaths: [],
+      }),
+    ).toThrow("verification_project_mismatch");
+    expect(store.listVerifications("run-project-1")).toEqual([]);
+    store.close();
+  });
+});

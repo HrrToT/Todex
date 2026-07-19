@@ -480,6 +480,9 @@ Expected: all pass, the JSON report has `allPassed: true`, and no generated repo
 **依赖：** T-005、T-006。
 **建议责任：** DeepSeek，可独立完成；Credential Manager 必须由 Codex 审查。
 
+冻结设计与实施计划：[T-009 设计](superpowers/specs/2026-07-18-t-009-desktop-persistence-design.md)、[T-009 实施计划](superpowers/plans/2026-07-18-t-009-desktop-persistence.md)、[任务卡](task-cards/T-009-desktop-persistence.md)。T-009 采用 `better-sqlite3 + keytar`，凭据不可用时 fail closed；它只提供 SQLite、Credential Manager、最小安全 Electron 宿主和 typed IPC，不实现工作台 UI、真实模型执行或安装包。
+**状态：** 已完成；P1 凭据引用持久化与审批审计导出已在同一分支复验并修复。
+
 **Files:**
 - Create: `apps/desktop/package.json`
 - Create: `apps/desktop/src/main/sqlite-store.ts`
@@ -489,7 +492,7 @@ Expected: all pass, the JSON report has `allPassed: true`, and no generated repo
 - Create: `apps/desktop/test/sqlite-store.test.ts`
 - Create: `apps/desktop/test/credential-store.test.ts`
 
-- [ ] **Step 1: Write failing persistence and credential tests**
+- [x] **Step 1: Write failing persistence and credential tests**
 
 ```ts
 it("persists a project profile without an API key column", async () => {
@@ -504,24 +507,36 @@ it("returns only configured status from credential store", async () => {
 });
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `pnpm --filter @todex/desktop test --run sqlite-store.test.ts credential-store.test.ts`
 Expected: FAIL because host adapters do not exist.
 
-- [ ] **Step 3: Implement host adapters and narrow IPC**
+- [x] **Step 3: Implement host adapters and narrow IPC**
 
 Use SQLite migrations for projects, commands, runs, trace, approvals and memory; use an injected keytar adapter for credential tests. Expose typed IPC only for workspace selection, project CRUD, run events, approval decisions, memory CRUD and credential status/update/clear. Never expose arbitrary Node APIs to the renderer.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
 Run: `pnpm --filter @todex/desktop test --run`
 Expected: PASS. Add a test that exported trace text contains no credential value.
 
-- [ ] **Step 5: Commit and record**
+- [x] **Step 5: Commit and record**
 
 Run: `git add apps/desktop`
 Run: `git commit -m "feat: add desktop persistence and credential adapters"`
+
+#### T-009 Delivery Record (2026-07-19)
+
+Implementation is recorded on `feat/t-009-desktop-persistence` in `330e9e2`, `b9ad555`, `b8dbaea`, `fd758bb`, and `acd7c21`. SQLite persistence, fail-closed credential adapters, secure typed IPC, preload, and a minimal Electron host were implemented without changing Harness Core, contracts, examples, CI, demo web, installer, or release workflow. Node ABI validation ran before Electron ABI rebuilding: the root Vitest run passed 18 files and 394 tests; typecheck, lint, recursive build, and diff checks passed when run. The native workspace allowlist permits only `better-sqlite3`, `keytar`, `electron`, and `esbuild` scripts.
+
+`electron-rebuild -f -w better-sqlite3,keytar` completed for Electron `v36.9.5`. The diagnostic smoke reached production Keytar module load, temporary SQLite host open, and IPC registration. The current execution environment reproducibly crashes in Electron lifecycle/shutdown with `0xC0000005`, including a standalone `app.whenReady()` probe. This is recorded as a controlled exception, not a successful interactive host assertion; T-010/T-012 must validate lifecycle and BrowserWindow behavior on a suitable interactive environment. No credential was written or read in smoke, and no real model, shell, or project action ran.
+
+P1 follow-up: the persisted `model_configs.credential_ref` is now the config-scoped credential source of truth across host reopen; adapter save/delete failures are fixed to `credential_unavailable`. Credential IPC requires `configId` (and `apiKey` for save) and returns only redacted lifecycle DTOs. Project export now uses `listApprovals(projectId)` so approved and denied audit records are preserved, while the IPC pending list remains unchanged. RED covered absent host lifecycle methods and terminal approvals missing from export. GREEN: targeted desktop suites passed 4 files/18 tests; root Vitest passed 18 files/397 tests; typecheck, lint, recursive build, and diff check passed. This follow-up is the single local commit `fix: persist credential references and approval audit`; it was not pushed.
+
+Final review P1/P2 follow-up: schema version 2 adds recoverable `credential_clear_pending`. Every save uses a newly generated Keytar reference; `replaceCredentialReference` atomically switches the active SQLite reference and records the previous reference for cleanup, while a failed transaction compensates the new value and preserves the old configured secret. Clear first removes the active SQLite reference and records pending work, then deletes Keytar, then completes pending so a final database failure cannot leave a dead active reference. These persistence errors are fixed `credential_persistence_failed` values without a secret. `saveVerification()` now checks run/command project ownership inside its insert transaction and rejects `verification_project_mismatch` before writing. BrowserWindow now has `sandbox: true` and denies navigation/new windows. The sole combined Electron workflow is `smoke:electron` (`rebuild:native && smoke`); low-level `smoke` does not rebuild. RED was observed for each boundary. Node-ABI GREEN passed targeted desktop tests (4 files/22 tests) and final root verification (19 files/403 tests), plus typecheck, lint, recursive build, and diff check; Electron lifecycle was intentionally not re-run because of the recorded `0xC0000005` exception.
+
+CI P1 rework: native `keytar` is now a lazy, cached production-adapter dependency. Importing the credential module or using `CredentialStore` with an injected fake adapter does not load the Linux `libsecret` binding. Only actual Keytar `save`, `read`, or `remove` triggers the dynamic import; regression tests prove the fake path remains native-free and the production loader is deferred and reused. Final root Node-ABI verification passed 19 files/405 tests with typecheck, lint, recursive build, and diff check.
 
 ### Task 10: T-010 实现共享工作台 UI 与桌面主窗口
 

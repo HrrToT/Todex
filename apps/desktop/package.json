@@ -1,0 +1,25 @@
+{
+  "name": "@todex/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main/index.js",
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.build.json",
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3,keytar",
+    "smoke": "pnpm build && electron ./dist/main/smoke.js",
+    "smoke:electron": "pnpm run rebuild:native && pnpm run smoke"
+  },
+  "dependencies": {
+    "@todex/contracts": "workspace:*",
+    "better-sqlite3": "^12.2.0",
+    "electron": "^36.5.0",
+    "keytar": "^7.9.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
+    "@types/better-sqlite3": "^7.6.13"
+  }
+}

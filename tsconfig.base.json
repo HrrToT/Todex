@@ -16,6 +16,9 @@
     "packages/*/src/**/*.ts",
     "packages/*/src/**/*.tsx",
     "packages/*/test/**/*.ts",
+    "apps/desktop/src/**/*.ts",
+    "apps/desktop/test/**/*.ts",
+    "apps/desktop/vitest.config.ts",
     "scripts/**/*.ts"
   ]
 }
