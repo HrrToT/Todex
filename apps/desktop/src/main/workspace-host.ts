@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 import {
@@ -30,5 +31,50 @@ export class WorkspaceHost {
 
   close(): void {
     this.store.close();
+  }
+
+  async credentialStatus(configId: string): Promise<{
+    readonly configured: boolean;
+    readonly availability: "available" | "unavailable";
+  }> {
+    return this.credentials.status(this.requireModelConfig(configId).credentialRef);
+  }
+
+  async saveCredential(configId: string, apiKey: string): Promise<{ readonly configured: true }> {
+    const config = this.requireModelConfig(configId);
+    const credentialRef = config.credentialRef ?? randomUUID();
+    const result = await this.credentials.save(credentialRef, apiKey);
+    this.store.saveModelConfig({
+      ...config,
+      credentialRef,
+      updatedAt: new Date().toISOString(),
+    });
+    return result;
+  }
+
+  async clearCredential(configId: string): Promise<{ readonly configured: false }> {
+    const config = this.requireModelConfig(configId);
+    if (!config.credentialRef) {
+      const status = await this.credentials.status(undefined);
+      if (status.availability === "unavailable") {
+        throw new Error("credential_unavailable");
+      }
+      return { configured: false };
+    }
+    const result = await this.credentials.clear(config.credentialRef);
+    this.store.saveModelConfig({
+      ...config,
+      credentialRef: undefined,
+      updatedAt: new Date().toISOString(),
+    });
+    return result;
+  }
+
+  private requireModelConfig(configId: string) {
+    const config = this.store.getModelConfig(configId);
+    if (!config) {
+      throw new Error("credential_config_not_found");
+    }
+    return config;
   }
 }

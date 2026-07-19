@@ -194,6 +194,15 @@ export class SQLiteStore {
     return rows.map((row) => this.toModelConfig(row));
   }
 
+  getModelConfig(configId: string): ModelConfigReference | undefined {
+    const row = this.database
+      .prepare(
+        "SELECT config_id, project_id, base_url, model, parameters_json, credential_ref, created_at, updated_at FROM model_configs WHERE config_id = ?",
+      )
+      .get(configId) as Row | undefined;
+    return row ? this.toModelConfig(row) : undefined;
+  }
+
   saveCommand(command: ConfiguredCommand): ConfiguredCommand {
     const parsed = configuredCommandSchema.parse(command);
     this.inTransaction(() => {
@@ -398,6 +407,20 @@ export class SQLiteStore {
     return rows.map((row) => this.toApproval(row));
   }
 
+  listApprovals(projectId: string): readonly ApprovalRequest[] {
+    return (this.database
+      .prepare(
+        `SELECT approvals.approval_id, approvals.run_id, approvals.action_id, approvals.tool,
+                approvals.risk_reasons_json, approvals.fingerprint, approvals.state, approvals.decision,
+                approvals.created_at, approvals.decided_at, approvals.expires_at
+         FROM approval_requests AS approvals
+         JOIN runs ON runs.run_id = approvals.run_id
+         WHERE runs.project_id = ?
+         ORDER BY approvals.created_at ASC, approvals.approval_id ASC`,
+      )
+      .all(projectId) as Row[]).map((row) => this.toApproval(row));
+  }
+
   saveMemory(memory: MemoryEntry): MemoryEntry {
     const parsed = memoryEntrySchema.parse(memory);
     this.inTransaction(() => {
@@ -443,7 +466,7 @@ export class SQLiteStore {
     const runIds = runs.map((run) => run.runId);
     const traces = runIds.flatMap((runId) => this.listTraces(runId));
     const verifications = runIds.flatMap((runId) => this.listVerifications(runId));
-    const approvals = this.listPendingApprovals(projectId);
+    const approvals = this.listApprovals(projectId);
     return {
       project: this.getProject(projectId),
       commands: this.listCommands(projectId),

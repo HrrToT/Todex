@@ -62,3 +62,13 @@ T-010/T-012 must validate interactive Electron lifecycle, BrowserWindow behavior
 - `git diff --check`: pass before evidence edits.
 
 The permanent smoke contains no diagnostic marker. Its native boundary is intentionally limited to adapter loading, temporary host/store open, IPC registration, close, and cleanup. No command in this record contains an API key value.
+
+## P1 Rework (2026-07-19)
+
+Review found that the original in-memory `CredentialStore` reference was not associated with a persisted model configuration after restart, and that `exportProject()` omitted terminal approval decisions by using the pending-only query.
+
+RED: new host tests failed because `saveCredential(configId, value)` and config-bound status/clear did not exist. A new SQLite audit test saved approved and denied requests, then failed because exported approvals was empty. IPC RED additionally showed that credential status accepted input without a configuration id.
+
+GREEN: `WorkspaceHost` now loads a `ModelConfigReference` by `configId`, saves a generated opaque reference to `model_configs.credential_ref` only after Keytar save succeeds, and clears that column only after Keytar delete succeeds. Reopen status resolves through the persisted ref. Adapter failure returns `credential_unavailable`, leaves the prior ref unchanged, and does not create a database fallback. IPC credential status/save/clear require `configId` and return no ref or secret. `SQLiteStore.listApprovals(projectId)` returns every approval state for audit export, while `listPendingApprovals` remains the IPC list behavior.
+
+Verification after the rework: `pnpm.cmd --filter @todex/desktop test --run credential-store.test.ts ipc.test.ts workspace-host.test.ts sqlite-store.test.ts` passed 4 files/18 tests. Root `pnpm.cmd test` passed 18 files/397 tests; root `pnpm.cmd typecheck`, `pnpm.cmd lint`, `pnpm.cmd build`, and `git diff --check` passed. The P1 implementation and this evidence are committed as `fix: persist credential references and approval audit`.

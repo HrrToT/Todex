@@ -481,7 +481,7 @@ Expected: all pass, the JSON report has `allPassed: true`, and no generated repo
 **建议责任：** DeepSeek，可独立完成；Credential Manager 必须由 Codex 审查。
 
 冻结设计与实施计划：[T-009 设计](superpowers/specs/2026-07-18-t-009-desktop-persistence-design.md)、[T-009 实施计划](superpowers/plans/2026-07-18-t-009-desktop-persistence.md)、[任务卡](task-cards/T-009-desktop-persistence.md)。T-009 采用 `better-sqlite3 + keytar`，凭据不可用时 fail closed；它只提供 SQLite、Credential Manager、最小安全 Electron 宿主和 typed IPC，不实现工作台 UI、真实模型执行或安装包。
-**状态：** 设计已批准，实施计划等待审阅。
+**状态：** 已完成；P1 凭据引用持久化与审批审计导出已在同一分支复验并修复。
 
 **Files:**
 - Create: `apps/desktop/package.json`
@@ -492,7 +492,7 @@ Expected: all pass, the JSON report has `allPassed: true`, and no generated repo
 - Create: `apps/desktop/test/sqlite-store.test.ts`
 - Create: `apps/desktop/test/credential-store.test.ts`
 
-- [ ] **Step 1: Write failing persistence and credential tests**
+- [x] **Step 1: Write failing persistence and credential tests**
 
 ```ts
 it("persists a project profile without an API key column", async () => {
@@ -507,21 +507,21 @@ it("returns only configured status from credential store", async () => {
 });
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `pnpm --filter @todex/desktop test --run sqlite-store.test.ts credential-store.test.ts`
 Expected: FAIL because host adapters do not exist.
 
-- [ ] **Step 3: Implement host adapters and narrow IPC**
+- [x] **Step 3: Implement host adapters and narrow IPC**
 
 Use SQLite migrations for projects, commands, runs, trace, approvals and memory; use an injected keytar adapter for credential tests. Expose typed IPC only for workspace selection, project CRUD, run events, approval decisions, memory CRUD and credential status/update/clear. Never expose arbitrary Node APIs to the renderer.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
 Run: `pnpm --filter @todex/desktop test --run`
 Expected: PASS. Add a test that exported trace text contains no credential value.
 
-- [ ] **Step 5: Commit and record**
+- [x] **Step 5: Commit and record**
 
 Run: `git add apps/desktop`
 Run: `git commit -m "feat: add desktop persistence and credential adapters"`
@@ -531,6 +531,8 @@ Run: `git commit -m "feat: add desktop persistence and credential adapters"`
 Implementation is recorded on `feat/t-009-desktop-persistence` in `330e9e2`, `b9ad555`, `b8dbaea`, `fd758bb`, and `acd7c21`. SQLite persistence, fail-closed credential adapters, secure typed IPC, preload, and a minimal Electron host were implemented without changing Harness Core, contracts, examples, CI, demo web, installer, or release workflow. Node ABI validation ran before Electron ABI rebuilding: the root Vitest run passed 18 files and 394 tests; typecheck, lint, recursive build, and diff checks passed when run. The native workspace allowlist permits only `better-sqlite3`, `keytar`, `electron`, and `esbuild` scripts.
 
 `electron-rebuild -f -w better-sqlite3,keytar` completed for Electron `v36.9.5`. The diagnostic smoke reached production Keytar module load, temporary SQLite host open, and IPC registration. The current execution environment reproducibly crashes in Electron lifecycle/shutdown with `0xC0000005`, including a standalone `app.whenReady()` probe. This is recorded as a controlled exception, not a successful interactive host assertion; T-010/T-012 must validate lifecycle and BrowserWindow behavior on a suitable interactive environment. No credential was written or read in smoke, and no real model, shell, or project action ran.
+
+P1 follow-up: the persisted `model_configs.credential_ref` is now the config-scoped credential source of truth across host reopen; adapter save/delete failures leave the DB reference unchanged and are fixed to `credential_unavailable`. Credential IPC requires `configId` (and `apiKey` for save) and returns only redacted lifecycle DTOs. Project export now uses `listApprovals(projectId)` so approved and denied audit records are preserved, while the IPC pending list remains unchanged. RED covered absent host lifecycle methods and terminal approvals missing from export. GREEN: targeted desktop suites passed 4 files/18 tests; root Vitest passed 18 files/397 tests; typecheck, lint, recursive build, and diff check passed. This follow-up is the single local commit `fix: persist credential references and approval audit`; it was not pushed.
 
 ### Task 10: T-010 实现共享工作台 UI 与桌面主窗口
 

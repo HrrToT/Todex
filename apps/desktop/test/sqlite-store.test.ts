@@ -161,4 +161,48 @@ describe("SQLiteStore", () => {
     expect(JSON.stringify(exported)).not.toContain("secret-value");
     store.close();
   });
+
+  it("exports approvals in terminal states for project audit history", () => {
+    const store = SQLiteStore.open({ databasePath: createDatabasePath() });
+    store.saveProject(PROJECT);
+    store.saveRun({
+      runId: "run-audit",
+      projectId: PROJECT.projectId,
+      taskText: "Audit approvals",
+      status: "completed",
+      startedAt: "2026-07-19T00:00:00.000Z",
+      endedAt: "2026-07-19T00:01:00.000Z",
+      repairAttempts: 0,
+    });
+    store.saveApproval({
+      approvalId: "approval-approved",
+      runId: "run-audit",
+      actionId: "action-1",
+      tool: "run_shell_command_with_approval",
+      riskReasons: ["user_confirmation_required"],
+      fingerprint: "approved-fingerprint",
+      state: "approved",
+      decision: "once",
+      createdAt: "2026-07-19T00:00:00.000Z",
+      decidedAt: "2026-07-19T00:00:30.000Z",
+    });
+    store.saveApproval({
+      approvalId: "approval-denied",
+      runId: "run-audit",
+      actionId: "action-2",
+      tool: "run_shell_command_with_approval",
+      riskReasons: ["user_confirmation_required"],
+      fingerprint: "denied-fingerprint",
+      state: "denied",
+      decision: "deny",
+      createdAt: "2026-07-19T00:00:00.000Z",
+      decidedAt: "2026-07-19T00:00:40.000Z",
+    });
+
+    expect(store.exportProject(PROJECT.projectId).approvals.map((approval) => approval.approvalId)).toEqual([
+      "approval-approved",
+      "approval-denied",
+    ]);
+    store.close();
+  });
 });

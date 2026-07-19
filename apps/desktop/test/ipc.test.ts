@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { TODexIpcChannels, registerTodexIpc } from "../src/main/ipc.js";
 import { createDesktopWindow } from "../src/main/index.js";
@@ -67,6 +67,36 @@ describe("desktop IPC", () => {
     await expect(ipcMain.handlers.get("project.get")?.({}, { projectId: 42 })).rejects.toThrow(
       "invalid_ipc_input",
     );
+    await expect(ipcMain.handlers.get("credential.status")?.({}, {})).rejects.toThrow(
+      "invalid_ipc_input",
+    );
+  });
+
+  it("scopes credential IPC to a model config and returns redacted lifecycle DTOs", async () => {
+    const ipcMain = new FakeIpcMain();
+    const host = {
+      credentialStatus: vi.fn().mockResolvedValue({ configured: true, availability: "available" }),
+      saveCredential: vi.fn().mockResolvedValue({ configured: true }),
+      clearCredential: vi.fn().mockResolvedValue({ configured: false }),
+    };
+    registerTodexIpc(ipcMain, host as never);
+
+    await expect(ipcMain.handlers.get("credential.status")?.({}, { configId: "config-1" })).resolves.toEqual(
+      { configured: true, availability: "available" },
+    );
+    await expect(
+      ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "secret-value" }),
+    ).resolves.toEqual({ configured: true });
+    await expect(ipcMain.handlers.get("credential.clear")?.({}, { configId: "config-1" })).resolves.toEqual({
+      configured: false,
+    });
+
+    expect(host.credentialStatus).toHaveBeenCalledWith("config-1");
+    expect(host.saveCredential).toHaveBeenCalledWith("config-1", "secret-value");
+    expect(host.clearCredential).toHaveBeenCalledWith("config-1");
+    expect(
+      JSON.stringify(await ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "secret-value" })),
+    ).not.toContain("secret-value");
   });
 
   it("creates a browser window without renderer Node access", () => {

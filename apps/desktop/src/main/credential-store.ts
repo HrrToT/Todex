@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import keytar from "keytar";
 
 export interface CredentialAdapter {
@@ -15,8 +13,6 @@ export interface CredentialStatus {
 
 export interface CredentialStoreOptions {
   readonly adapter: CredentialAdapter;
-  readonly credentialRef?: string;
-  readonly createCredentialRef?: () => string;
 }
 
 export class KeytarCredentialAdapter implements CredentialAdapter {
@@ -34,20 +30,14 @@ export class KeytarCredentialAdapter implements CredentialAdapter {
 }
 
 export class CredentialStore {
-  private credentialRef: string | undefined;
-  private readonly createCredentialRef: () => string;
+  constructor(private readonly options: CredentialStoreOptions) {}
 
-  constructor(private readonly options: CredentialStoreOptions) {
-    this.credentialRef = options.credentialRef;
-    this.createCredentialRef = options.createCredentialRef ?? randomUUID;
-  }
-
-  async status(): Promise<CredentialStatus> {
+  async status(credentialRef: string | undefined): Promise<CredentialStatus> {
     try {
       // This probes the provider but deliberately discards every secret value.
-      await this.options.adapter.read(this.credentialRef ?? "todex-status-probe");
+      const credential = await this.options.adapter.read(credentialRef ?? "todex-status-probe");
       return {
-        configured: this.credentialRef !== undefined,
+        configured: credentialRef !== undefined && credential !== undefined,
         availability: "available",
       };
     } catch {
@@ -55,32 +45,21 @@ export class CredentialStore {
     }
   }
 
-  async save(apiKey: string): Promise<{ readonly configured: true }> {
-    const credentialRef = this.credentialRef ?? this.createCredentialRef();
+  async save(credentialRef: string, apiKey: string): Promise<{ readonly configured: true }> {
     try {
       await this.options.adapter.save(credentialRef, apiKey);
     } catch {
       throw new Error("credential_unavailable");
     }
-    this.credentialRef = credentialRef;
     return { configured: true };
   }
 
-  async clear(): Promise<{ readonly configured: false }> {
-    if (!this.credentialRef) {
-      try {
-        await this.options.adapter.read("todex-status-probe");
-      } catch {
-        throw new Error("credential_unavailable");
-      }
-      return { configured: false };
-    }
+  async clear(credentialRef: string): Promise<{ readonly configured: false }> {
     try {
-      await this.options.adapter.remove(this.credentialRef);
+      await this.options.adapter.remove(credentialRef);
     } catch {
       throw new Error("credential_unavailable");
     }
-    this.credentialRef = undefined;
     return { configured: false };
   }
 }

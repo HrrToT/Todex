@@ -21,6 +21,10 @@ class InMemoryCredentialAdapter implements CredentialAdapter {
   async remove(credentialRef: string): Promise<void> {
     this.values.delete(credentialRef);
   }
+
+  get(credentialRef: string): string | undefined {
+    return this.values.get(credentialRef);
+  }
 }
 
 class FailingCredentialAdapter implements CredentialAdapter {
@@ -39,29 +43,35 @@ class FailingCredentialAdapter implements CredentialAdapter {
 
 describe("CredentialStore", () => {
   it("returns only redacted lifecycle DTOs", async () => {
-    const store = new CredentialStore({ adapter: new InMemoryCredentialAdapter() });
+    const adapter = new InMemoryCredentialAdapter();
+    const store = new CredentialStore({ adapter });
+    const credentialRef = "opaque-credential-ref";
 
-    const before = await store.status();
-    const saved = await store.save(API_KEY_SEED);
-    const after = await store.status();
-    const cleared = await store.clear();
+    const before = await store.status(credentialRef);
+    const saved = await store.save(credentialRef, API_KEY_SEED);
+    const after = await store.status(credentialRef);
 
     expect(before).toEqual({ configured: false, availability: "available" });
     expect(saved).toEqual({ configured: true });
     expect(after).toEqual({ configured: true, availability: "available" });
+    expect(adapter.get(credentialRef)).toBe(API_KEY_SEED);
+    const cleared = await store.clear(credentialRef);
     expect(cleared).toEqual({ configured: false });
+    expect(adapter.get(credentialRef)).toBeUndefined();
     expect(JSON.stringify([before, saved, after, cleared])).not.toContain(API_KEY_SEED);
   });
 
   it("fails closed without exposing adapter errors", async () => {
     const store = new CredentialStore({ adapter: new FailingCredentialAdapter() });
 
-    await expect(store.save(API_KEY_SEED)).rejects.toThrow("credential_unavailable");
-    await expect(store.clear()).rejects.toThrow("credential_unavailable");
-    await expect(store.status()).resolves.toEqual({
+    await expect(store.save("opaque-credential-ref", API_KEY_SEED)).rejects.toThrow("credential_unavailable");
+    await expect(store.clear("opaque-credential-ref")).rejects.toThrow("credential_unavailable");
+    await expect(store.status("opaque-credential-ref")).resolves.toEqual({
       configured: false,
       availability: "unavailable",
     });
-    await expect(store.save(API_KEY_SEED)).rejects.not.toThrow("private adapter detail");
+    await expect(store.save("opaque-credential-ref", API_KEY_SEED)).rejects.not.toThrow(
+      "private adapter detail",
+    );
   });
 });

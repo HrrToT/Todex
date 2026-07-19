@@ -58,7 +58,10 @@ const approvalDecisionSchema = z
   })
   .strict();
 const memoryIdSchema = z.object({ memoryId: z.string().min(1) }).strict();
-const credentialSaveSchema = z.object({ apiKey: z.string().min(1) }).strict();
+const credentialConfigSchema = z.object({ configId: z.string().min(1) }).strict();
+const credentialSaveSchema = z
+  .object({ configId: z.string().min(1), apiKey: z.string().min(1) })
+  .strict();
 
 export function registerTodexIpc(ipcMain: IpcMainLike, host: WorkspaceHost): void {
   register(ipcMain, "project.selectWorkspace", workspaceSelectionSchema, (input) => {
@@ -118,9 +121,15 @@ export function registerTodexIpc(ipcMain: IpcMainLike, host: WorkspaceHost): voi
     host.store.deleteMemory(input.memoryId, new Date().toISOString()),
   );
 
-  register(ipcMain, "credential.status", emptySchema, () => host.credentials.status());
-  register(ipcMain, "credential.save", credentialSaveSchema, (input) => host.credentials.save(input.apiKey));
-  register(ipcMain, "credential.clear", emptySchema, () => host.credentials.clear());
+  register(ipcMain, "credential.status", credentialConfigSchema, (input) =>
+    host.credentialStatus(input.configId),
+  );
+  register(ipcMain, "credential.save", credentialSaveSchema, (input) =>
+    host.saveCredential(input.configId, input.apiKey),
+  );
+  register(ipcMain, "credential.clear", credentialConfigSchema, (input) =>
+    host.clearCredential(input.configId),
+  );
 }
 
 function register<T>(
