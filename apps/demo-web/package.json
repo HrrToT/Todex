@@ -1,0 +1,11 @@
+{
+  "name": "@todex/demo-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build"
+  }
+}
