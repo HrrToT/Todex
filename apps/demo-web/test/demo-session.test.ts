@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createDemoSession } from "../src/demo-session.js";
+import { DEMO_SCENARIOS, createDemoSession } from "../src/demo-session.js";
 
 describe("DemoSession", () => {
   it("rejects real-model configuration and arbitrary paths with the fixed error", async () => {
@@ -29,6 +29,21 @@ describe("DemoSession", () => {
     for (const input of rejectedInputs) {
       expect(serialized).not.toContain(input);
     }
+  });
+
+  it("does not accept a scenario injected by runtime mutation of the exported collection", async () => {
+    const injectedScenario = "runtime-injected";
+
+    try {
+      (DEMO_SCENARIOS as unknown as string[]).push(injectedScenario);
+    } catch {
+      // A frozen public collection is the expected secure implementation.
+    }
+
+    const session = createDemoSession();
+    await expect(session.selectScenario(injectedScenario)).rejects.toThrow(
+      new Error("demo_restricted"),
+    );
   });
 
   it("reports workspace escape as a rejected action before dispatch", async () => {

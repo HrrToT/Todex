@@ -1,8 +1,8 @@
-export const DEMO_SCENARIOS = [
+export const DEMO_SCENARIOS = Object.freeze([
   "workspace-escape",
   "repair-feedback",
   "approval-isolation",
-] as const;
+] as const);
 
 export type DemoScenarioId = (typeof DEMO_SCENARIOS)[number];
 export type DemoStatus = "idle" | "awaiting_approval" | "completed";
