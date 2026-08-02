@@ -85,6 +85,49 @@ describe("DemoSession", () => {
     expect(secondRun.pendingApproval?.approvalId).not.toBe(firstRun.pendingApproval?.approvalId);
   });
 
+  it("rejects scenario switching and repeated runs while approval is pending", async () => {
+    const session = createDemoSession();
+
+    await session.selectScenario("approval-isolation");
+    const pending = await session.run();
+    const approvalId = pending.pendingApproval?.approvalId ?? "";
+
+    await expect(session.selectScenario("workspace-escape")).rejects.toThrow(
+      new Error("demo_approval_pending"),
+    );
+    await expect(session.run()).rejects.toThrow(new Error("demo_approval_pending"));
+
+    const completed = await session.decideApproval({ approvalId, decision: "allow" });
+    expect(completed.status).toBe("completed");
+    expect(completed.runs).toHaveLength(1);
+  });
+
+  it("does not let mutations of returned snapshots change later snapshots", async () => {
+    const session = createDemoSession();
+
+    await session.selectScenario("repair-feedback");
+    const first = await session.run();
+    const expected = structuredClone(first);
+
+    (first.runs as unknown as { id: string }[])[0].id = "mutated-run";
+    (first.trace as { type: string }[]).push({ type: "action_rejected" });
+    (first.verification as string[]).push("test_failure");
+    (first.diff as { summary: string }).summary = "mutated-diff";
+
+    const later = await session.selectScenario("repair-feedback");
+    expect(later).toEqual(expected);
+
+    await session.selectScenario("approval-isolation");
+    const approvalSnapshot = await session.run();
+    const originalApprovalId = approvalSnapshot.pendingApproval?.approvalId ?? "";
+    if (approvalSnapshot.pendingApproval !== undefined) {
+      (approvalSnapshot.pendingApproval as { approvalId: string }).approvalId = "mutated-approval";
+    }
+
+    const completed = await session.decideApproval({ approvalId: originalApprovalId, decision: "allow" });
+    expect(completed.status).toBe("completed");
+  });
+
   it("reset removes runs, traces, diffs, and pending approval", async () => {
     const session = createDemoSession();
 

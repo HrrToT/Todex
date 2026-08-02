@@ -101,12 +101,18 @@ export function createDemoSession(): DemoSession {
       if (!isDemoScenario(id)) {
         return restricted();
       }
+      if (state.pendingApproval !== undefined && id !== state.selectedScenario) {
+        throw new Error("demo_approval_pending");
+      }
 
       state.selectedScenario = id;
       return snapshot(state);
     },
 
     async run() {
+      if (state.pendingApproval !== undefined) {
+        throw new Error("demo_approval_pending");
+      }
       const scenarioId = state.selectedScenario;
       if (scenarioId === undefined) {
         return restricted();
