@@ -1,7 +1,10 @@
 import { once } from "node:events";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { request as sendRequest, type Server } from "node:http";
+import { fileURLToPath } from "node:url";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { createDemoServer } from "../src/server.js";
 
@@ -10,7 +13,29 @@ interface ApiResponse {
   readonly body: unknown;
 }
 
+interface TextResponse {
+  readonly status: number;
+  readonly contentType: string | undefined;
+  readonly body: string;
+}
+
 const servers: Server[] = [];
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const distRoot = resolve(packageRoot, "dist");
+const outsideFixture = resolve(packageRoot, "outside-static-fixture.txt");
+
+beforeAll(async () => {
+  await mkdir(resolve(distRoot, "assets"), { recursive: true });
+  await writeFile(resolve(distRoot, "index.html"), "<!doctype html><title>T-011 fixture</title>", "utf8");
+  await writeFile(resolve(distRoot, "assets", "app.js"), "console.log('fixture');", "utf8");
+  await writeFile(resolve(distRoot, "assets", "styles.css"), "body { color: black; }", "utf8");
+  await writeFile(outsideFixture, "outside-dist-secret", "utf8");
+});
+
+afterAll(async () => {
+  await rm(resolve(distRoot, "assets"), { recursive: true, force: true });
+  await rm(outsideFixture, { force: true });
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -57,11 +82,57 @@ async function request(method: string, path: string, body?: string): Promise<Api
   });
 }
 
+async function requestText(method: string, path: string): Promise<TextResponse> {
+  const server = createDemoServer();
+  servers.push(server);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("test_server_address_unavailable");
+  }
+
+  return new Promise<TextResponse>((resolveResponse, reject) => {
+    const client = sendRequest({ host: "127.0.0.1", method, path, port: address.port }, (response) => {
+      let text = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => {
+        text += chunk;
+      });
+      response.on("end", () => {
+        resolveResponse({
+          status: response.statusCode ?? 0,
+          contentType: response.headers["content-type"],
+          body: text,
+        });
+      });
+    });
+    client.on("error", reject);
+    client.end();
+  });
+}
+
 function expectSafeError(response: ApiResponse, error: "demo_restricted" | "demo_invalid_request") {
   expect(response.body).toEqual({ error });
 }
 
 describe("public mock demo server", () => {
+  it("serves the fixed dist index and known assets, while rejecting unsafe or unknown paths", async () => {
+    const index = await requestText("GET", "/");
+    const script = await requestText("GET", "/assets/app.js");
+    const stylesheet = await requestText("GET", "/assets/styles.css");
+    const traversal = await requestText("GET", "/%2e%2e/outside-static-fixture.txt");
+    const unknown = await requestText("GET", "/assets/missing.js");
+
+    expect(index).toMatchObject({ status: 200, contentType: "text/html; charset=utf-8", body: "<!doctype html><title>T-011 fixture</title>" });
+    expect(script).toMatchObject({ status: 200, contentType: "text/javascript; charset=utf-8", body: "console.log('fixture');" });
+    expect(stylesheet).toMatchObject({ status: 200, contentType: "text/css; charset=utf-8", body: "body { color: black; }" });
+    expect(traversal).toMatchObject({ status: 404, body: JSON.stringify({ error: "demo_invalid_request" }) });
+    expect(unknown).toMatchObject({ status: 404, body: JSON.stringify({ error: "demo_invalid_request" }) });
+    expect(traversal.body).not.toContain("outside-dist-secret");
+  });
+
   it("returns the initial session for GET /api/session", async () => {
     const response = await request("GET", "/api/session");
 

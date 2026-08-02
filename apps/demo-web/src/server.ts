@@ -1,10 +1,18 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { readFile } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createDemoSession, type DemoSession, type DemoSnapshot } from "./demo-session.js";
 
 const MAX_BODY_BYTES = 8 * 1024;
 const RESTRICTED_KEYS = new Set(["command", "apiKey", "path", "patch"]);
+const DIST_ROOT = resolve(fileURLToPath(new URL("../dist", import.meta.url)));
+const STATIC_CONTENT_TYPES: Record<string, string> = {
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+};
 
 type SafeError = "demo_restricted" | "demo_invalid_request";
 type JsonRecord = Record<string, unknown>;
@@ -16,6 +24,60 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
 
 function sendError(response: ServerResponse, status: number, error: SafeError): void {
   sendJson(response, status, { error });
+}
+
+function staticFilePath(requestUrl: string): string | undefined {
+  const rawPath = requestUrl.split(/[?#]/, 1)[0] ?? "/";
+  let decodedPath: string;
+
+  try {
+    decodedPath = decodeURIComponent(rawPath);
+  } catch {
+    return undefined;
+  }
+
+  if (
+    !decodedPath.startsWith("/") ||
+    decodedPath.includes("\0") ||
+    decodedPath.includes("\\") ||
+    decodedPath.split("/").includes("..")
+  ) {
+    return undefined;
+  }
+
+  const requestedFile = decodedPath === "/" ? "index.html" : decodedPath.slice(1);
+  if (isAbsolute(requestedFile)) {
+    return undefined;
+  }
+
+  const target = resolve(DIST_ROOT, requestedFile);
+  const targetRelativePath = relative(DIST_ROOT, target);
+  if (targetRelativePath === "" || targetRelativePath === ".." || targetRelativePath.startsWith(`..${sep}`) || isAbsolute(targetRelativePath)) {
+    return undefined;
+  }
+
+  return target;
+}
+
+function staticContentType(filePath: string): string {
+  const extension = filePath.slice(filePath.lastIndexOf("."));
+  return STATIC_CONTENT_TYPES[extension] ?? "application/octet-stream";
+}
+
+async function serveStatic(response: ServerResponse, requestUrl: string): Promise<void> {
+  const target = staticFilePath(requestUrl);
+  if (target === undefined) {
+    sendError(response, 404, "demo_invalid_request");
+    return;
+  }
+
+  try {
+    const content = await readFile(target);
+    response.writeHead(200, { "content-type": staticContentType(target) });
+    response.end(content);
+  } catch {
+    sendError(response, 404, "demo_invalid_request");
+  }
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -138,20 +200,29 @@ export function createDemoServer(): Server {
 
   return createServer(async (request, response) => {
     const method = request.method;
-    const path = new URL(request.url ?? "/", "http://localhost").pathname;
+    const requestUrl = request.url ?? "/";
+    const path = new URL(requestUrl, "http://localhost").pathname;
 
     if (method === "GET" && path === "/api/session") {
       sendJson(response, 200, latest);
       return;
     }
-    if (method !== "POST") {
-      sendError(response, path.startsWith("/api/") ? 405 : 404, "demo_invalid_request");
+    if (method === "POST") {
+      const snapshot = await handlePost(response, path, await readJsonBody(request), session);
+      if (snapshot !== undefined) {
+        latest = snapshot;
+      }
       return;
     }
-    const snapshot = await handlePost(response, path, await readJsonBody(request), session);
-    if (snapshot !== undefined) {
-      latest = snapshot;
+    if (path.startsWith("/api/")) {
+      sendError(response, 405, "demo_invalid_request");
+      return;
     }
+    if (method === "GET") {
+      await serveStatic(response, requestUrl);
+      return;
+    }
+    sendError(response, 404, "demo_invalid_request");
   });
 }
 
