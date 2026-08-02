@@ -1,6 +1,7 @@
 import { once } from "node:events";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { cp, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { request as sendRequest, type Server } from "node:http";
 import { fileURLToPath } from "node:url";
 
@@ -23,18 +24,41 @@ const servers: Server[] = [];
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distRoot = resolve(packageRoot, "dist");
 const outsideFixture = resolve(packageRoot, "outside-static-fixture.txt");
+const serverFactory = createDemoServer as unknown as (options?: {
+  readonly distRoot?: string;
+  readonly realpath?: (path: string) => Promise<string>;
+}) => Server;
+
+let distExisted = false;
+let outsideFixtureExisted = false;
+let fixtureBackupRoot = "";
+let distBackup = "";
+let outsideFixtureBackup = "";
 
 beforeAll(async () => {
+  fixtureBackupRoot = await mkdtemp(join(tmpdir(), "todex-demo-fixture-backup-"));
+  distBackup = join(fixtureBackupRoot, "dist");
+  outsideFixtureBackup = join(fixtureBackupRoot, "outside-static-fixture.txt");
+  distExisted = await pathExists(distRoot);
+  outsideFixtureExisted = await pathExists(outsideFixture);
+  if (distExisted) await cp(distRoot, distBackup, { recursive: true });
+  if (outsideFixtureExisted) await cp(outsideFixture, outsideFixtureBackup);
+
   await mkdir(resolve(distRoot, "assets"), { recursive: true });
+  await mkdir(resolve(distRoot, "api"), { recursive: true });
   await writeFile(resolve(distRoot, "index.html"), "<!doctype html><title>T-011 fixture</title>", "utf8");
   await writeFile(resolve(distRoot, "assets", "app.js"), "console.log('fixture');", "utf8");
   await writeFile(resolve(distRoot, "assets", "styles.css"), "body { color: black; }", "utf8");
+  await writeFile(resolve(distRoot, "api", "session"), "static-api-sentinel", "utf8");
   await writeFile(outsideFixture, "outside-dist-secret", "utf8");
 });
 
 afterAll(async () => {
-  await rm(resolve(distRoot, "assets"), { recursive: true, force: true });
+  await rm(distRoot, { recursive: true, force: true });
+  if (distExisted) await cp(distBackup, distRoot, { recursive: true });
   await rm(outsideFixture, { force: true });
+  if (outsideFixtureExisted) await cp(outsideFixtureBackup, outsideFixture);
+  await rm(fixtureBackupRoot, { recursive: true, force: true });
 });
 
 afterEach(async () => {
@@ -47,7 +71,7 @@ afterEach(async () => {
 });
 
 async function request(method: string, path: string, body?: string): Promise<ApiResponse> {
-  const server = createDemoServer();
+  const server = serverFactory();
   servers.push(server);
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -83,7 +107,7 @@ async function request(method: string, path: string, body?: string): Promise<Api
 }
 
 async function requestText(method: string, path: string): Promise<TextResponse> {
-  const server = createDemoServer();
+  const server = serverFactory();
   servers.push(server);
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -113,6 +137,101 @@ async function requestText(method: string, path: string): Promise<TextResponse> 
   });
 }
 
+async function requestTextWithOptions(
+  method: string,
+  path: string,
+  options: { readonly distRoot?: string; readonly realpath?: (path: string) => Promise<string> },
+): Promise<TextResponse> {
+  const server = serverFactory(options);
+  servers.push(server);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("test_server_address_unavailable");
+  }
+
+  return new Promise<TextResponse>((resolveResponse, reject) => {
+    const client = sendRequest({ method, path, host: "127.0.0.1", port: address.port }, (response) => {
+      let text = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => { text += chunk; });
+      response.on("end", () => {
+        resolveResponse({
+          status: response.statusCode ?? 0,
+          contentType: response.headers["content-type"],
+          body: text,
+        });
+      });
+    });
+    client.on("error", reject);
+    client.end();
+  });
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isWindowsSymlinkPrivilegeError(error: unknown): boolean {
+  if (process.platform !== "win32" || typeof error !== "object" || error === null || !("code" in error)) return false;
+  return error.code === "EPERM" || error.code === "EACCES";
+}
+
+async function requestBodyInChunks(body: string, contentLength?: number): Promise<ApiResponse> {
+  const server = serverFactory();
+  servers.push(server);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("test_server_address_unavailable");
+  }
+
+  let client: ReturnType<typeof sendRequest> | undefined;
+  try {
+    const responsePromise = new Promise<ApiResponse>((resolveResponse, reject) => {
+      client = sendRequest(
+        {
+          host: "127.0.0.1",
+          method: "POST",
+          path: "/api/run",
+          port: address.port,
+          headers: {
+            "content-type": "application/json",
+            ...(contentLength === undefined ? {} : { "content-length": contentLength }),
+          },
+        },
+        (response) => {
+          let text = "";
+          response.setEncoding("utf8");
+          response.on("data", (chunk: string) => { text += chunk; });
+          response.on("end", () => resolveResponse({ status: response.statusCode ?? 0, body: JSON.parse(text) as unknown }));
+        },
+      );
+      client.on("error", reject);
+    });
+
+    const activeClient = client;
+    if (activeClient === undefined) throw new Error("test_client_unavailable");
+    activeClient.write(body.slice(0, 4096));
+    activeClient.write(body.slice(4096));
+    return await Promise.race([
+      responsePromise,
+      new Promise<ApiResponse>((_, reject) => setTimeout(() => reject(new Error("body_limit_response_timeout")), 250)),
+    ]);
+  } finally {
+    client?.destroy();
+  }
+}
+
 function expectSafeError(response: ApiResponse, error: "demo_restricted" | "demo_invalid_request") {
   expect(response.body).toEqual({ error });
 }
@@ -131,6 +250,92 @@ describe("public mock demo server", () => {
     expect(traversal).toMatchObject({ status: 404, body: JSON.stringify({ error: "demo_invalid_request" }) });
     expect(unknown).toMatchObject({ status: 404, body: JSON.stringify({ error: "demo_invalid_request" }) });
     expect(traversal.body).not.toContain("outside-dist-secret");
+  });
+
+  it("rejects an oversized streamed body before the client finishes sending it", async () => {
+    const body = `${"x".repeat(8192)}x`;
+    const response = await requestBodyInChunks(body, Buffer.byteLength(body) + 1024);
+
+    expect(response.status).toBe(400);
+    expectSafeError(response, "demo_invalid_request");
+  });
+
+  it("rejects an oversized chunked body before the client finishes sending it", async () => {
+    const body = `${"x".repeat(8192)}x`;
+    const response = await requestBodyInChunks(body);
+
+    expect(response.status).toBe(400);
+    expectSafeError(response, "demo_invalid_request");
+  });
+
+  it("does not serve a symlinked static target outside the canonical dist root", async () => {
+    const fixtureRoot = await mkdtemp(join(tmpdir(), "todex-demo-static-"));
+    const outsideRoot = await mkdtemp(join(tmpdir(), "todex-demo-outside-"));
+    const outsideSentinel = join(outsideRoot, "secret.txt");
+    const linkPath = join(fixtureRoot, "escape.txt");
+    let linkCreated = false;
+    const realpathCalls: string[] = [];
+
+    try {
+      await writeFile(outsideSentinel, "outside-sentinel", "utf8");
+      try {
+        await symlink(outsideSentinel, linkPath, "file");
+        linkCreated = true;
+      } catch (error) {
+        if (!isWindowsSymlinkPrivilegeError(error)) throw error;
+      }
+
+      if (linkCreated) {
+        const response = await requestTextWithOptions("GET", "/escape.txt", { distRoot: fixtureRoot });
+        expect(response.status).toBe(404);
+        expect(response.body).not.toContain("outside-sentinel");
+      } else {
+        await writeFile(join(fixtureRoot, "inside.txt"), "inside-sentinel", "utf8");
+        const response = await requestTextWithOptions("GET", "/inside.txt", {
+          distRoot: fixtureRoot,
+          realpath: async (target) => {
+            realpathCalls.push(target);
+            return outsideSentinel;
+          },
+        });
+        expect(response.status).toBe(404);
+        expect(response.body).not.toContain("outside-sentinel");
+        expect(realpathCalls).toEqual([join(fixtureRoot, "inside.txt")]);
+      }
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true });
+      await rm(outsideRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["/api%2fsession", "/api%5Csession"])(
+    "never falls through to static assets for encoded API-like path %s",
+    async (path) => {
+      const response = await requestText("GET", path);
+
+      expect(response.status).toBe(404);
+      expect(response.body).toBe(JSON.stringify({ error: "demo_invalid_request" }));
+      expect(response.body).not.toContain("static-api-sentinel");
+    },
+  );
+
+  it("restores exact pre-test fixture paths instead of deleting pre-existing content", async () => {
+    const fixturePath = resolve(distRoot, "pre-existing-fixture.txt");
+    const existed = await pathExists(fixturePath);
+    const original = existed ? await readFile(fixturePath, "utf8") : undefined;
+
+    try {
+      await writeFile(fixturePath, "temporary-test-fixture", "utf8");
+    } finally {
+      if (existed) {
+        await writeFile(fixturePath, original ?? "", "utf8");
+      } else {
+        await rm(fixturePath, { force: true });
+      }
+    }
+
+    expect(await pathExists(fixturePath)).toBe(existed);
+    if (existed) expect(await readFile(fixturePath, "utf8")).toBe(original);
   });
 
   it("returns the initial session for GET /api/session", async () => {

@@ -1,11 +1,12 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createDemoSession, type DemoSession, type DemoSnapshot } from "./demo-session.js";
 
 const MAX_BODY_BYTES = 8 * 1024;
+const REQUEST_TIMEOUT_MS = 15_000;
 const RESTRICTED_KEYS = new Set(["command", "apiKey", "path", "patch"]);
 const DIST_ROOT = resolve(fileURLToPath(new URL("../dist", import.meta.url)));
 const STATIC_CONTENT_TYPES: Record<string, string> = {
@@ -16,6 +17,10 @@ const STATIC_CONTENT_TYPES: Record<string, string> = {
 
 type SafeError = "demo_restricted" | "demo_invalid_request";
 type JsonRecord = Record<string, unknown>;
+type DemoServerOptions = {
+  readonly distRoot?: string;
+  readonly realpath?: (path: string) => Promise<string>;
+};
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -26,9 +31,22 @@ function sendError(response: ServerResponse, status: number, error: SafeError): 
   sendJson(response, status, { error });
 }
 
-function staticFilePath(requestUrl: string): string | undefined {
+function containsEncodedSeparator(requestUrl: string): boolean {
+  const rawPath = requestUrl.split(/[?#]/, 1)[0] ?? "/";
+  return /%2f|%5c/i.test(rawPath);
+}
+
+async function staticFilePath(
+  requestUrl: string,
+  distRoot: string,
+  resolveTargetRealpath: (path: string) => Promise<string>,
+): Promise<string | undefined> {
   const rawPath = requestUrl.split(/[?#]/, 1)[0] ?? "/";
   let decodedPath: string;
+
+  if (containsEncodedSeparator(requestUrl)) {
+    return undefined;
+  }
 
   try {
     decodedPath = decodeURIComponent(rawPath);
@@ -50,13 +68,27 @@ function staticFilePath(requestUrl: string): string | undefined {
     return undefined;
   }
 
-  const target = resolve(DIST_ROOT, requestedFile);
-  const targetRelativePath = relative(DIST_ROOT, target);
+  const target = resolve(distRoot, requestedFile);
+  const targetRelativePath = relative(distRoot, target);
   if (targetRelativePath === "" || targetRelativePath === ".." || targetRelativePath.startsWith(`..${sep}`) || isAbsolute(targetRelativePath)) {
     return undefined;
   }
 
-  return target;
+  try {
+    const [canonicalDistRoot, canonicalTarget] = await Promise.all([realpath(distRoot), resolveTargetRealpath(target)]);
+    const canonicalRelativePath = relative(canonicalDistRoot, canonicalTarget);
+    if (
+      canonicalRelativePath === "" ||
+      canonicalRelativePath === ".." ||
+      canonicalRelativePath.startsWith(`..${sep}`) ||
+      isAbsolute(canonicalRelativePath)
+    ) {
+      return undefined;
+    }
+    return canonicalTarget;
+  } catch {
+    return undefined;
+  }
 }
 
 function staticContentType(filePath: string): string {
@@ -64,8 +96,13 @@ function staticContentType(filePath: string): string {
   return STATIC_CONTENT_TYPES[extension] ?? "application/octet-stream";
 }
 
-async function serveStatic(response: ServerResponse, requestUrl: string): Promise<void> {
-  const target = staticFilePath(requestUrl);
+async function serveStatic(
+  response: ServerResponse,
+  requestUrl: string,
+  distRoot: string,
+  resolveTargetRealpath: (path: string) => Promise<string>,
+): Promise<void> {
+  const target = await staticFilePath(requestUrl, distRoot, resolveTargetRealpath);
   if (target === undefined) {
     sendError(response, 404, "demo_invalid_request");
     return;
@@ -97,30 +134,43 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown | undefin
   return new Promise((resolve) => {
     let body = "";
     let byteCount = 0;
-    let tooLarge = false;
+    let settled = false;
+
+    const finish = (value: unknown | undefined) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
 
     request.setEncoding("utf8");
     request.on("data", (chunk: string) => {
+      if (settled) return;
       byteCount += Buffer.byteLength(chunk);
       if (byteCount > MAX_BODY_BYTES) {
-        tooLarge = true;
+        request.resume();
+        finish(undefined);
         return;
       }
       body += chunk;
     });
     request.on("end", () => {
-      if (tooLarge) {
-        resolve(undefined);
-        return;
-      }
+      if (settled) return;
       try {
-        resolve(JSON.parse(body) as unknown);
+        finish(JSON.parse(body) as unknown);
       } catch {
-        resolve(undefined);
+        finish(undefined);
       }
     });
-    request.on("error", () => resolve(undefined));
+    request.on("error", () => finish(undefined));
+    request.on("aborted", () => finish(undefined));
   });
+}
+
+function contentLengthExceedsLimit(request: IncomingMessage): boolean {
+  const value = request.headers["content-length"];
+  if (typeof value !== "string") return false;
+  const contentLength = Number(value);
+  return Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES;
 }
 
 async function handlePost(
@@ -188,8 +238,10 @@ async function handlePost(
   }
 }
 
-export function createDemoServer(): Server {
+export function createDemoServer(options: DemoServerOptions = {}): Server {
   const session = createDemoSession();
+  const distRoot = options.distRoot ?? DIST_ROOT;
+  const resolveTargetRealpath = options.realpath ?? realpath;
   let latest: DemoSnapshot = {
     status: "idle",
     runs: [],
@@ -198,16 +250,25 @@ export function createDemoServer(): Server {
     dispatcherCalls: 0,
   };
 
-  return createServer(async (request, response) => {
+  const server = createServer(async (request, response) => {
     const method = request.method;
     const requestUrl = request.url ?? "/";
     const path = new URL(requestUrl, "http://localhost").pathname;
 
+    if (containsEncodedSeparator(requestUrl)) {
+      sendError(response, 404, "demo_invalid_request");
+      return;
+    }
     if (method === "GET" && path === "/api/session") {
       sendJson(response, 200, latest);
       return;
     }
     if (method === "POST") {
+      if (contentLengthExceedsLimit(request)) {
+        request.resume();
+        sendError(response, 400, "demo_invalid_request");
+        return;
+      }
       const snapshot = await handlePost(response, path, await readJsonBody(request), session);
       if (snapshot !== undefined) {
         latest = snapshot;
@@ -219,11 +280,15 @@ export function createDemoServer(): Server {
       return;
     }
     if (method === "GET") {
-      await serveStatic(response, requestUrl);
+      await serveStatic(response, requestUrl, distRoot, resolveTargetRealpath);
       return;
     }
     sendError(response, 404, "demo_invalid_request");
   });
+  if ("requestTimeout" in server) {
+    server.requestTimeout = REQUEST_TIMEOUT_MS;
+  }
+  return server;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
