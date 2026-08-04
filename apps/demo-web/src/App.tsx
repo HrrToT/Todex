@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { DEMO_SCENARIOS, type DemoScenarioId, type DemoSnapshot, type DemoTraceEvent } from "./demo-session.js";
+import { DEMO_SCENARIOS, type DemoApproval, type DemoScenarioId, type DemoSnapshot, type DemoTraceEvent } from "./demo-session.js";
 import "./styles.css";
 
 export interface DemoClient {
@@ -43,6 +43,10 @@ const initialSnapshot: DemoSnapshot = {
   trace: [],
   verification: [],
   dispatcherCalls: 0,
+};
+
+const APPROVAL_REASON_TEXT: Record<DemoApproval["reason"], string> = {
+  approval_isolation: "Approval isolation keeps this once-only decision bound to its affected run.",
 };
 
 function scenarioLabel(id: DemoScenarioId | undefined): string {
@@ -110,8 +114,6 @@ export function App({ client }: AppProps): JSX.Element {
   }
 
   const selectedScenario = SCENARIOS.find((scenario) => scenario.id === snapshot.selectedScenario);
-  const currentRun = snapshot.runs.at(-1);
-
   return (
     <main className="workbench-shell">
       <aside className="scenario-rail" aria-label="Demo scenarios">
@@ -225,7 +227,8 @@ export function App({ client }: AppProps): JSX.Element {
               <p className="muted">No pending approval.</p>
             ) : (
               <div className="approval-panel">
-                <p>Run {currentRun?.id ?? "current"} requests a once-only decision.</p>
+                <p>{APPROVAL_REASON_TEXT[snapshot.pendingApproval.reason]}</p>
+                <p>Affected run: {snapshot.pendingApproval.runId}</p>
                 <div className="approval-actions">
                   <button className="primary-button" type="button" onClick={() => void update(() => client.decideApproval({ approvalId: snapshot.pendingApproval!.approvalId, decision: "allow" }), "Approval recorded")} disabled={busy}>Allow once</button>
                   <button className="danger-button" type="button" onClick={() => void update(() => client.decideApproval({ approvalId: snapshot.pendingApproval!.approvalId, decision: "deny" }), "Approval denied")} disabled={busy}>Deny</button>

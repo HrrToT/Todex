@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import { App, type DemoClient } from "../src/App.js";
-import type { DemoSnapshot } from "../src/demo-session.js";
+import { createDemoSession, type DemoSnapshot } from "../src/demo-session.js";
 
 function snapshot(overrides: Partial<DemoSnapshot> = {}): DemoSnapshot {
   return {
@@ -70,43 +70,91 @@ describe("public mock demo workbench", () => {
     expect(traceItems[1]).toHaveTextContent("Verification completed");
   });
 
-  it("allows keyboard approval and reset", async () => {
+  it("explains an approval request and supports the full keyboard-only approval flow", async () => {
     const user = userEvent.setup();
-    const approvalSnapshot = snapshot({ selectedScenario: "approval-isolation" });
-    const pendingSnapshot = snapshot({
-      selectedScenario: "approval-isolation",
-      status: "awaiting_approval",
-      runs: [{ id: "run-1", scenarioId: "approval-isolation", status: "awaiting_approval" }],
-      trace: [{ type: "approval_requested", runId: "run-1" }],
-      pendingApproval: { approvalId: "approval-1", scope: "once" },
-    });
-    const decidedSnapshot = snapshot({
-      selectedScenario: "approval-isolation",
-      status: "completed",
-      runs: [{ id: "run-1", scenarioId: "approval-isolation", status: "completed" }],
-      trace: [
-        { type: "approval_requested", runId: "run-1" },
-        { type: "approval_decided", runId: "run-1" },
-      ],
-    });
+    const session = createDemoSession();
+    let current = await session.reset();
+    const calls = { selectScenario: 0, run: 0, decideApproval: 0, reset: 0 };
     const client: DemoClient = {
-      readSession: async () => snapshot(),
-      selectScenario: async () => approvalSnapshot,
-      run: async () => pendingSnapshot,
-      decideApproval: async () => decidedSnapshot,
-      reset: async () => snapshot(),
+      readSession: async () => current,
+      selectScenario: async (scenarioId) => {
+        calls.selectScenario += 1;
+        current = await session.selectScenario(scenarioId);
+        return current;
+      },
+      run: async () => {
+        calls.run += 1;
+        current = await session.run();
+        return current;
+      },
+      decideApproval: async (input) => {
+        calls.decideApproval += 1;
+        current = await session.decideApproval(input);
+        return current;
+      },
+      reset: async () => {
+        calls.reset += 1;
+        current = await session.reset();
+        return current;
+      },
     };
 
     render(<App client={client} />);
-    await user.click(screen.getByRole("button", { name: "Approval isolation" }));
-    await user.click(screen.getByRole("button", { name: "Run scenario" }));
+    const workspaceEscape = screen.getByRole("button", { name: "Workspace escape" });
+    const repairFeedback = screen.getByRole("button", { name: "Repair feedback" });
+    const approvalIsolation = screen.getByRole("button", { name: "Approval isolation" });
+    const reset = screen.getByRole("button", { name: "Reset demo" });
+    const run = screen.getByRole("button", { name: "Run scenario" });
+
+    await user.tab();
+    expect(workspaceEscape).toHaveFocus();
+    await user.tab();
+    expect(repairFeedback).toHaveFocus();
+    await user.tab();
+    expect(approvalIsolation).toHaveFocus();
+    await user.keyboard(" ");
+    expect(calls.selectScenario).toBe(1);
+    expect(approvalIsolation).toHaveAttribute("aria-pressed", "true");
+
+    await user.tab();
+    expect(reset).toHaveFocus();
+    await user.tab();
+    expect(run).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(calls.run).toBe(1);
+
+    expect(current.pendingApproval).toMatchObject({
+      reason: "approval_isolation",
+      runId: "run-1",
+    });
+    expect(await screen.findByText("Approval isolation keeps this once-only decision bound to its affected run.")).toBeVisible();
+    expect(screen.getByText("Affected run: run-1")).toBeVisible();
 
     const allow = screen.getByRole("button", { name: "Allow once" });
-    allow.focus();
-    await user.keyboard("{Enter}");
+    await user.tab();
+    expect(workspaceEscape).toHaveFocus();
+    await user.tab();
+    expect(repairFeedback).toHaveFocus();
+    await user.tab();
+    expect(approvalIsolation).toHaveFocus();
+    await user.tab();
+    expect(reset).toHaveFocus();
+    await user.tab();
+    expect(allow).toHaveFocus();
+    await user.keyboard(" ");
+    expect(calls.decideApproval).toBe(1);
     expect(screen.getByRole("status")).toHaveTextContent("Approval recorded");
 
-    await user.click(screen.getByRole("button", { name: "Reset demo" }));
+    await user.tab();
+    expect(workspaceEscape).toHaveFocus();
+    await user.tab();
+    expect(repairFeedback).toHaveFocus();
+    await user.tab();
+    expect(approvalIsolation).toHaveFocus();
+    await user.tab();
+    expect(reset).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(calls.reset).toBe(1);
     expect(screen.getByText("Choose a scenario to begin")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Allow once" })).not.toBeInTheDocument();
   });

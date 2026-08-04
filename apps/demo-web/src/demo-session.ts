@@ -17,6 +17,8 @@ export interface DemoTraceEvent {
 export interface DemoApproval {
   readonly approvalId: string;
   readonly scope: "once";
+  readonly reason: "approval_isolation";
+  readonly runId: string;
 }
 
 export interface DemoRun {
@@ -130,7 +132,12 @@ export function createDemoSession(): DemoSession {
         state.verification = ["test_failure", "passed"];
         state.diff = { summary: "scripted_repair" };
       } else {
-        const pendingApproval = { approvalId: `approval-${state.nextApproval++}`, scope: "once" } as const;
+        const pendingApproval = {
+          approvalId: `approval-${state.nextApproval++}`,
+          scope: "once",
+          reason: "approval_isolation",
+          runId,
+        } as const;
         state.runs.push({ id: runId, scenarioId, status: "awaiting_approval" });
         state.status = "awaiting_approval";
         state.pendingApproval = pendingApproval;
