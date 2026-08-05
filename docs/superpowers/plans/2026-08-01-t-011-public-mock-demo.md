@@ -289,4 +289,3 @@ git commit -m "docs: record public mock demo verification"
 - Spec coverage: Tasks 1, 2, 3 and 4 respectively implement the fixture/restriction boundary, server enforcement, accessible workbench and delivery evidence.
 - Placeholder scan: each task names its files, public types, test behavior and command. Actual evidence is intentionally collected in Task 4, not fabricated.
 - Type consistency: `DemoScenarioId`, `DemoSnapshot`, `DemoSession`, `{ approvalId, decision }` and `DemoClient` retain the same meaning in every task.
-
