@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: todex-mock-demo
+    runtime: node
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @todex/demo-web build
+    startCommand: pnpm --filter @todex/demo-web start
