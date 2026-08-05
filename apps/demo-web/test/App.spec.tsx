@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -14,6 +14,17 @@ function snapshot(overrides: Partial<DemoSnapshot> = {}): DemoSnapshot {
     dispatcherCalls: 0,
     ...overrides,
   };
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  resolve(value: T): void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 function createClient(initial: DemoSnapshot, afterScenario: DemoSnapshot, afterRun: DemoSnapshot): DemoClient {
@@ -37,6 +48,32 @@ function createClient(initial: DemoSnapshot, afterScenario: DemoSnapshot, afterR
 }
 
 describe("public mock demo workbench", () => {
+  it("preserves a selected scenario when an older session read resolves later", async () => {
+    const user = userEvent.setup();
+    const initialRead = deferred<DemoSnapshot>();
+    const selected = snapshot({ selectedScenario: "repair-feedback" });
+    const client: DemoClient = {
+      readSession: () => initialRead.promise,
+      selectScenario: async () => selected,
+      run: async () => selected,
+      decideApproval: async () => selected,
+      reset: async () => snapshot(),
+    };
+
+    render(<App client={client} />);
+    await user.click(screen.getByRole("button", { name: "Repair feedback" }));
+
+    expect(screen.getByRole("button", { name: "Repair feedback" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Run scenario" })).toBeEnabled();
+
+    await act(async () => {
+      initialRead.resolve(snapshot());
+    });
+
+    expect(screen.getByRole("button", { name: "Repair feedback" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Run scenario" })).toBeEnabled();
+  });
+
   it("labels Mock Demo and renders fixed repair feedback after running a scenario", async () => {
     const user = userEvent.setup();
     const client = createClient(

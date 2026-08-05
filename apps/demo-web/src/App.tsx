@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { DEMO_SCENARIOS, type DemoApproval, type DemoScenarioId, type DemoSnapshot, type DemoTraceEvent } from "./demo-session.js";
 import "./styles.css";
@@ -84,16 +84,27 @@ export function App({ client }: AppProps): JSX.Element {
   const [snapshot, setSnapshot] = useState<DemoSnapshot>(initialSnapshot);
   const [message, setMessage] = useState("Choose a scenario to begin");
   const [busy, setBusy] = useState(false);
+  const isMounted = useRef(false);
+  const latestRequest = useRef(0);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
+    const request = ++latestRequest.current;
+    setBusy(false);
     void client.readSession().then((next) => {
-      if (active) {
+      if (active && isMounted.current && request === latestRequest.current) {
         setSnapshot(next);
         setMessage(statusText(next));
       }
     }).catch(() => {
-      if (active) setMessage("Demo is temporarily unavailable");
+      if (active && isMounted.current && request === latestRequest.current) setMessage("Demo is temporarily unavailable");
     });
     return () => {
       active = false;
@@ -101,15 +112,18 @@ export function App({ client }: AppProps): JSX.Element {
   }, [client]);
 
   async function update(action: () => Promise<DemoSnapshot>, nextMessage?: string): Promise<void> {
+    const request = ++latestRequest.current;
     setBusy(true);
     try {
       const next = await action();
-      setSnapshot(next);
-      setMessage(nextMessage ?? statusText(next));
+      if (isMounted.current && request === latestRequest.current) {
+        setSnapshot(next);
+        setMessage(nextMessage ?? statusText(next));
+      }
     } catch {
-      setMessage("Demo is temporarily unavailable");
+      if (isMounted.current && request === latestRequest.current) setMessage("Demo is temporarily unavailable");
     } finally {
-      setBusy(false);
+      if (isMounted.current && request === latestRequest.current) setBusy(false);
     }
   }
 
