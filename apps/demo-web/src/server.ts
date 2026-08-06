@@ -283,6 +283,7 @@ export function createDemoServer(options: DemoServerOptions = {}): Server {
   const now = options.now ?? Date.now;
   const sessionTtlMs = options.sessionTtlMs ?? SESSION_TTL_MS;
   const maxSessions = options.maxSessions ?? MAX_SESSIONS;
+  const secureCookies = options.secureCookies ?? process.env.NODE_ENV === "production";
   const sessions = new Map<string, StoredSession>();
 
   function removeExpiredSessions(currentTime: number): void {
@@ -294,11 +295,6 @@ export function createDemoServer(options: DemoServerOptions = {}): Server {
   function evictOldestSession(): void {
     const oldest = sessions.keys().next().value;
     if (oldest !== undefined) sessions.delete(oldest);
-  }
-
-  function shouldUseSecureCookies(request: IncomingMessage): boolean {
-    const forwardedProto = request.headers["x-forwarded-proto"];
-    return options.secureCookies ?? (process.env.NODE_ENV === "production" || forwardedProto === "https");
   }
 
   function sessionFor(request: IncomingMessage, response: ServerResponse): StoredSession {
@@ -321,7 +317,7 @@ export function createDemoServer(options: DemoServerOptions = {}): Server {
       expiresAt: currentTime + sessionTtlMs,
     };
     sessions.set(id, stored);
-    response.setHeader("set-cookie", sessionCookie(id, shouldUseSecureCookies(request)));
+    response.setHeader("set-cookie", sessionCookie(id, secureCookies));
     return stored;
   }
 

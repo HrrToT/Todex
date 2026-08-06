@@ -83,3 +83,39 @@ There is no recorded independent code-quality review, T-011 pull request,
 GitHub Actions run, or Render deployment. See the dated
 [verification record](../verification/2026-08-05-t-011-public-mock-demo.md)
 for fresh local command and browser evidence.
+
+## Post-8c2a718 Review Verification (2026-08-06)
+
+This follow-up is limited to `apps/demo-web/src/server.ts`,
+`apps/demo-web/test/server.test.ts`, and this task card plus the dated
+verification record. The cookie-policy P2 is fixed: `createDemoServer` accepts
+the narrow `secureCookies?: boolean` option; its default is exactly
+`NODE_ENV === "production"`; and no request header, including
+`X-Forwarded-Proto`, can change the selection. The cookie remains
+`Path=/; HttpOnly; SameSite=Lax`, with `Secure` added only when the server
+policy is enabled.
+
+The focused TDD cycle was recorded from the real HTTP server:
+
+- RED: `pnpm.cmd --filter @todex/demo-web test --run server.test.ts` exited 1
+  with 20 tests, 19 passed and 1 failed. The failing forged
+  `X-Forwarded-Proto: https` case received a cookie ending in `; Secure`.
+- GREEN: the same command exited 0 with 1 file and 20 tests passed. It now
+  proves both that the untrusted header does not add `Secure` under the
+  nonproduction default and that `secureCookies: true` does add it while
+  preserving `HttpOnly`, `SameSite=Lax`, and `Path=/`.
+
+The fresh package run was `pnpm.cmd --filter @todex/demo-web test --run`: exit
+0, 3 files and 35 tests passed. This includes the terminal deny semantics
+(`status: "denied"`, a denied `run-1`, an `approval_denied` trace, no pending
+approval, and `dispatcherCalls: 0`), opaque server-issued per-cookie session
+isolation across two clients, and bounded session retention. The session tests
+advance a controlled clock past a 10 ms TTL and verify expiration, and use a
+`maxSessions: 1` store to verify oldest-session eviction; cookie access moves a
+live entry to the newest position for the bounded LRU behavior.
+
+The fresh root commands also passed: `pnpm.cmd test --run` exited 0 with 23
+files and 446 tests; `pnpm.cmd typecheck` exited 0; `pnpm.cmd lint` exited 0;
+and `pnpm.cmd build` exited 0, including the production `apps/demo-web`
+bundle. No fresh browser, HTTP service, Render, pull-request, CI, deployment,
+or release verification was performed for this follow-up.

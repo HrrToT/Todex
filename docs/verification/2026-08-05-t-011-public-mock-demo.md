@@ -85,3 +85,54 @@ available.
 `render.yaml` is configuration only. No Render deploy, public URL, deployment
 log, pull request, GitHub Actions run, release artifact, or T-011 merge is
 claimed by this record.
+
+## Post-8c2a718 Review Evidence (2026-08-06)
+
+The final-review cookie-policy P2 was fixed in the requested server/test scope.
+`createDemoServer` now resolves `secureCookies?: boolean` once at server
+creation, defaulting to `NODE_ENV === "production"`. `X-Forwarded-Proto` and
+all other request headers are ignored for cookie security. The existing cookie
+attributes remain `Path=/; HttpOnly; SameSite=Lax`; `Secure` is present only
+for configured secure cookies.
+
+### TDD and Focused Results
+
+The focused RED command was:
+
+```text
+pnpm.cmd --filter @todex/demo-web test --run server.test.ts
+```
+
+It exited 1 with 20 tests: 19 passed and the new forged
+`X-Forwarded-Proto: https` test failed because the old implementation added
+`Secure`. After the minimal server change, the same command exited 0 with 1
+file and 20 tests passed. The fixed tests cover both nonproduction defaults
+that reject the untrusted header and `secureCookies: true` that adds `Secure`
+while preserving the other three attributes.
+
+### Fresh Local Commands
+
+| Command | Fresh result |
+| --- | --- |
+| `pnpm.cmd --filter @todex/demo-web test --run` | Exit 0: 3 files, 35 tests passed. |
+| `pnpm.cmd test --run` | Exit 0: 23 files, 446 tests passed. |
+| `pnpm.cmd typecheck` | Exit 0. |
+| `pnpm.cmd lint` | Exit 0. |
+| `pnpm.cmd build` | Exit 0. The production `apps/demo-web` bundle was emitted. |
+| `git diff --check` | Exit 0 before the documentation append; it is rerun after this append as the final check. |
+
+The 35-test demo run includes the deny terminal-state assertion: denial ends
+with `status: "denied"`, records the run as denied, emits an
+`approval_denied` trace, clears the pending approval, and makes zero dispatcher
+calls. It also includes two-client coverage using distinct opaque server-issued
+cookies: the second client starts idle, cannot approve the first client's
+approval, cannot select a session through a query parameter, and does not alter
+the first client's pending state. TTL and bounded max-session coverage use a
+controlled clock and `maxSessions: 1` to verify lazy expiration and oldest-entry
+eviction; the server refreshes Map recency when an existing cookie is used.
+The same suite verifies the fixed cookie policy under both the default and
+explicitly configured modes.
+
+No fresh local browser or HTTP service check was performed for this follow-up.
+No fresh Render deployment, public URL, deployment log, pull request, GitHub
+Actions run, release artifact, or merge is claimed.

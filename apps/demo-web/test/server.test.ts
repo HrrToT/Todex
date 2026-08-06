@@ -34,6 +34,7 @@ const serverFactory = createDemoServer as unknown as (options?: {
   readonly now?: () => number;
   readonly sessionTtlMs?: number;
   readonly maxSessions?: number;
+  readonly secureCookies?: boolean;
 }) => Server;
 
 let distExisted = false;
@@ -249,6 +250,7 @@ async function requestFromServer(
   path: string,
   body?: string,
   cookie?: string,
+  headers: Record<string, string> = {},
 ): Promise<SessionApiResponse> {
   const address = server.address();
   if (address === null || typeof address === "string") {
@@ -265,6 +267,7 @@ async function requestFromServer(
         headers: {
           ...(body === undefined ? {} : { "content-type": "application/json" }),
           ...(cookie === undefined ? {} : { cookie }),
+          ...headers,
         },
       },
       (response) => {
@@ -393,6 +396,36 @@ describe("public mock demo server", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ status: "idle", runs: [], trace: [], verification: [] });
+  });
+
+  it("does not trust X-Forwarded-Proto to add Secure to cookies outside production", async () => {
+    const server = serverFactory();
+    servers.push(server);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+
+    const response = await requestFromServer(
+      server,
+      "GET",
+      "/api/session",
+      undefined,
+      undefined,
+      { "x-forwarded-proto": "https" },
+    );
+
+    expect(response.cookie).toMatch(/^todex_demo_session=[A-Za-z0-9_-]+; Path=\/; HttpOnly; SameSite=Lax$/);
+    expect(response.cookie).not.toContain("; Secure");
+  });
+
+  it("adds Secure to cookies only when secureCookies is configured", async () => {
+    const server = serverFactory({ secureCookies: true });
+    servers.push(server);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+
+    const response = await requestFromServer(server, "GET", "/api/session");
+
+    expect(response.cookie).toMatch(/^todex_demo_session=[A-Za-z0-9_-]+; Path=\/; HttpOnly; SameSite=Lax; Secure$/);
   });
 
   it("isolates each cookie jar and does not accept a visitor-controlled session identity", async () => {
