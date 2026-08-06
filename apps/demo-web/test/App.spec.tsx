@@ -196,6 +196,40 @@ describe("public mock demo workbench", () => {
     expect(screen.queryByRole("button", { name: "Allow once" })).not.toBeInTheDocument();
   });
 
+  it("keeps a denied approval outcome visible in the status and trace", async () => {
+    const user = userEvent.setup();
+    const session = createDemoSession();
+    let current = await session.reset();
+    const client: DemoClient = {
+      readSession: async () => current,
+      selectScenario: async (scenarioId) => {
+        current = await session.selectScenario(scenarioId);
+        return current;
+      },
+      run: async () => {
+        current = await session.run();
+        return current;
+      },
+      decideApproval: async (input) => {
+        current = await session.decideApproval(input);
+        return current;
+      },
+      reset: async () => {
+        current = await session.reset();
+        return current;
+      },
+    };
+
+    render(<App client={client} />);
+    await user.click(screen.getByRole("button", { name: "Approval isolation" }));
+    await user.click(screen.getByRole("button", { name: "Run scenario" }));
+    await user.click(screen.getByRole("button", { name: "Deny" }));
+
+    expect(screen.getByText("denied")).toBeVisible();
+    expect(screen.getByRole("list", { name: "Execution trace" })).toHaveTextContent("Approval denied");
+    expect(screen.getByText("Scenario denied")).toBeVisible();
+  });
+
   it("offers only semantic fixed controls and no visitor execution inputs", () => {
     render(<App client={createClient(snapshot(), snapshot(), snapshot())} />);
 

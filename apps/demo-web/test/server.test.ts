@@ -14,6 +14,10 @@ interface ApiResponse {
   readonly body: unknown;
 }
 
+interface SessionApiResponse extends ApiResponse {
+  readonly cookie: string | undefined;
+}
+
 interface TextResponse {
   readonly status: number;
   readonly contentType: string | undefined;
@@ -27,6 +31,9 @@ const outsideFixture = resolve(packageRoot, "outside-static-fixture.txt");
 const serverFactory = createDemoServer as unknown as (options?: {
   readonly distRoot?: string;
   readonly realpath?: (path: string) => Promise<string>;
+  readonly now?: () => number;
+  readonly sessionTtlMs?: number;
+  readonly maxSessions?: number;
 }) => Server;
 
 let distExisted = false;
@@ -236,6 +243,49 @@ function expectSafeError(response: ApiResponse, error: "demo_restricted" | "demo
   expect(response.body).toEqual({ error });
 }
 
+async function requestFromServer(
+  server: Server,
+  method: string,
+  path: string,
+  body?: string,
+  cookie?: string,
+): Promise<SessionApiResponse> {
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("test_server_address_unavailable");
+  }
+
+  return new Promise<SessionApiResponse>((resolveResponse, reject) => {
+    const client = sendRequest(
+      {
+        host: "127.0.0.1",
+        method,
+        path,
+        port: address.port,
+        headers: {
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+          ...(cookie === undefined ? {} : { cookie }),
+        },
+      },
+      (response) => {
+        let text = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => { text += chunk; });
+        response.on("end", () => {
+          const setCookie = response.headers["set-cookie"];
+          resolveResponse({
+            status: response.statusCode ?? 0,
+            body: JSON.parse(text) as unknown,
+            cookie: Array.isArray(setCookie) ? setCookie[0] : setCookie,
+          });
+        });
+      },
+    );
+    client.on("error", reject);
+    client.end(body);
+  });
+}
+
 describe("public mock demo server", () => {
   it("serves the fixed dist index and known assets, while rejecting unsafe or unknown paths", async () => {
     const index = await requestText("GET", "/");
@@ -345,6 +395,84 @@ describe("public mock demo server", () => {
     expect(response.body).toMatchObject({ status: "idle", runs: [], trace: [], verification: [] });
   });
 
+  it("isolates each cookie jar and does not accept a visitor-controlled session identity", async () => {
+    const server = serverFactory();
+    servers.push(server);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+
+    const firstInitial = await requestFromServer(server, "GET", "/api/session");
+    expect(firstInitial.cookie).toMatch(/^todex_demo_session=[A-Za-z0-9_-]+; Path=\/; HttpOnly; SameSite=Lax$/);
+    const firstCookie = firstInitial.cookie;
+    const firstSelected = await requestFromServer(
+      server,
+      "POST",
+      "/api/scenario",
+      '{"scenarioId":"approval-isolation"}',
+      firstCookie,
+    );
+    const firstPending = await requestFromServer(server, "POST", "/api/run", "{}", firstCookie);
+    const approvalId = (firstPending.body as { pendingApproval: { approvalId: string } }).pendingApproval.approvalId;
+
+    const secondInitial = await requestFromServer(server, "GET", "/api/session");
+    const secondCookie = secondInitial.cookie;
+    expect(secondInitial.body).toMatchObject({ status: "idle", runs: [], trace: [] });
+    expect(secondCookie).not.toBe(firstCookie);
+
+    const secondApproval = await requestFromServer(
+      server,
+      "POST",
+      "/api/approval",
+      JSON.stringify({ approvalId, decision: "allow" }),
+      secondCookie,
+    );
+    expect(secondApproval).toMatchObject({ status: 400, body: { error: "demo_restricted" } });
+
+    const secondQuery = await requestFromServer(server, "GET", "/api/session?sessionId=first-visitor", undefined, secondCookie);
+    expect(secondQuery.body).toMatchObject({ status: "idle", runs: [], trace: [] });
+
+    const secondReset = await requestFromServer(server, "POST", "/api/reset", "{}", secondCookie);
+    expect(secondReset.body).toMatchObject({ status: "idle", runs: [], trace: [] });
+
+    const firstVisible = await requestFromServer(server, "GET", "/api/session", undefined, firstCookie);
+    expect(firstSelected.body).toMatchObject({ selectedScenario: "approval-isolation" });
+    expect(firstVisible.body).toMatchObject({ status: "awaiting_approval", pendingApproval: { approvalId } });
+  });
+
+  it("lazily expires bounded server-side sessions", async () => {
+    let now = 1_000;
+    const server = serverFactory({ now: () => now, sessionTtlMs: 10, maxSessions: 1 });
+    servers.push(server);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+
+    const firstInitial = await requestFromServer(server, "GET", "/api/session");
+    const firstCookie = firstInitial.cookie;
+    await requestFromServer(server, "POST", "/api/scenario", '{"scenarioId":"repair-feedback"}', firstCookie);
+
+    now += 11;
+    const secondInitial = await requestFromServer(server, "GET", "/api/session");
+    expect(secondInitial.body).toMatchObject({ status: "idle", runs: [], trace: [] });
+
+    const expiredFirst = await requestFromServer(server, "GET", "/api/session", undefined, firstCookie);
+    expect(expiredFirst.body).toMatchObject({ status: "idle", runs: [], trace: [] });
+  });
+
+  it("caps the number of live in-memory sessions", async () => {
+    const server = serverFactory({ sessionTtlMs: 1_000, maxSessions: 1 });
+    servers.push(server);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+
+    const firstInitial = await requestFromServer(server, "GET", "/api/session");
+    const firstCookie = firstInitial.cookie;
+    await requestFromServer(server, "POST", "/api/scenario", '{"scenarioId":"repair-feedback"}', firstCookie);
+    await requestFromServer(server, "GET", "/api/session");
+
+    const evictedFirst = await requestFromServer(server, "GET", "/api/session", undefined, firstCookie);
+    expect(evictedFirst.body).toMatchObject({ status: "idle", runs: [], trace: [] });
+  });
+
   it("accepts exactly a known scenario ID", async () => {
     const response = await request("POST", "/api/scenario", '{"scenarioId":"workspace-escape"}');
 
@@ -364,24 +492,12 @@ describe("public mock demo server", () => {
     servers.push(server);
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
-    const address = server.address();
-    if (address === null || typeof address === "string") throw new Error("test_server_address_unavailable");
-
-    const send = (path: string, body: string) => new Promise<ApiResponse>((resolve, reject) => {
-      const client = sendRequest({ host: "127.0.0.1", method: "POST", path, port: address.port, headers: { "content-type": "application/json" } }, (response) => {
-        let text = "";
-        response.setEncoding("utf8");
-        response.on("data", (chunk: string) => { text += chunk; });
-        response.on("end", () => resolve({ status: response.statusCode ?? 0, body: JSON.parse(text) as unknown }));
-      });
-      client.on("error", reject);
-      client.end(body);
-    });
-
-    await send("/api/scenario", '{"scenarioId":"approval-isolation"}');
-    const pending = await send("/api/run", "{}");
+    const initial = await requestFromServer(server, "GET", "/api/session");
+    const cookie = initial.cookie;
+    await requestFromServer(server, "POST", "/api/scenario", '{"scenarioId":"approval-isolation"}', cookie);
+    const pending = await requestFromServer(server, "POST", "/api/run", "{}", cookie);
     const approvalId = (pending.body as { pendingApproval: { approvalId: string } }).pendingApproval.approvalId;
-    const response = await send("/api/approval", JSON.stringify({ approvalId, decision: "allow" }));
+    const response = await requestFromServer(server, "POST", "/api/approval", JSON.stringify({ approvalId, decision: "allow" }), cookie);
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ status: "completed" });

@@ -85,6 +85,25 @@ describe("DemoSession", () => {
     expect(secondRun.pendingApproval?.approvalId).not.toBe(firstRun.pendingApproval?.approvalId);
   });
 
+  it("records an explicit denial without completing or executing the risky run", async () => {
+    const session = createDemoSession();
+
+    await session.selectScenario("approval-isolation");
+    const pending = await session.run();
+    const denied = await session.decideApproval({
+      approvalId: pending.pendingApproval?.approvalId ?? "",
+      decision: "deny",
+    });
+
+    expect(denied.status).toBe("denied");
+    expect(denied.runs).toEqual([
+      { id: "run-1", scenarioId: "approval-isolation", status: "denied" },
+    ]);
+    expect(denied.trace).toContainEqual({ type: "approval_denied", runId: "run-1" });
+    expect(denied.pendingApproval).toBeUndefined();
+    expect(denied.dispatcherCalls).toBe(0);
+  });
+
   it("rejects scenario switching and repeated runs while approval is pending", async () => {
     const session = createDemoSession();
 

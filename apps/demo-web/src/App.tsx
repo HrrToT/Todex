@@ -59,7 +59,8 @@ function traceLabel(event: DemoTraceEvent): string {
     repair_started: "Repair started",
     verification_completed: "Verification completed",
     approval_requested: "Approval requested",
-    approval_decided: "Approval decided",
+    approval_allowed: "Approval allowed",
+    approval_denied: "Approval denied",
   };
   return labels[event.type];
 }
@@ -69,7 +70,8 @@ function traceDetail(event: DemoTraceEvent): string {
   if (event.type === "repair_started") return "Scripted repair feedback was applied to the fixture.";
   if (event.type === "verification_completed") return "The repaired fixture completed verification.";
   if (event.type === "approval_requested") return `Run ${event.runId ?? "current"} is waiting for a once-only decision.`;
-  return `The approval decision was recorded for ${event.runId ?? "current"}.`;
+  if (event.type === "approval_allowed") return `Run ${event.runId ?? "current"} was allowed for this once-only decision.`;
+  return `Run ${event.runId ?? "current"} was denied and did not execute.`;
 }
 
 function statusText(snapshot: DemoSnapshot): string {
@@ -77,6 +79,7 @@ function statusText(snapshot: DemoSnapshot): string {
     return snapshot.selectedScenario === undefined ? "Choose a scenario to begin" : `Ready to run ${scenarioLabel(snapshot.selectedScenario)}`;
   }
   if (snapshot.status === "awaiting_approval") return "Approval required before this run can continue";
+  if (snapshot.status === "denied") return "Scenario denied";
   return "Scenario complete";
 }
 
@@ -177,7 +180,7 @@ export function App({ client }: AppProps): JSX.Element {
             <h2 id="stream-heading">{selectedScenario?.label ?? "Choose a scenario"}</h2>
           </div>
           <div className={`status-chip status-${snapshot.status}`}>
-            <span aria-hidden="true">{snapshot.status === "completed" ? "●" : snapshot.status === "awaiting_approval" ? "!" : "○"}</span>
+            <span aria-hidden="true">{snapshot.status === "completed" ? "●" : snapshot.status === "awaiting_approval" ? "!" : snapshot.status === "denied" ? "!" : "○"}</span>
             <span>{snapshot.status.replaceAll("_", " ")}</span>
           </div>
         </header>
@@ -245,7 +248,7 @@ export function App({ client }: AppProps): JSX.Element {
                 <p>Affected run: {snapshot.pendingApproval.runId}</p>
                 <div className="approval-actions">
                   <button className="primary-button" type="button" onClick={() => void update(() => client.decideApproval({ approvalId: snapshot.pendingApproval!.approvalId, decision: "allow" }), "Approval recorded")} disabled={busy}>Allow once</button>
-                  <button className="danger-button" type="button" onClick={() => void update(() => client.decideApproval({ approvalId: snapshot.pendingApproval!.approvalId, decision: "deny" }), "Approval denied")} disabled={busy}>Deny</button>
+                  <button className="danger-button" type="button" onClick={() => void update(() => client.decideApproval({ approvalId: snapshot.pendingApproval!.approvalId, decision: "deny" }))} disabled={busy}>Deny</button>
                 </div>
               </div>
             )}

@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { randomBytes } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,9 @@ import { createDemoSession, type DemoSession, type DemoSnapshot } from "./demo-s
 
 const MAX_BODY_BYTES = 8 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
+const SESSION_COOKIE_NAME = "todex_demo_session";
+const SESSION_TTL_MS = 30 * 60 * 1000;
+const MAX_SESSIONS = 500;
 const RESTRICTED_KEYS = new Set(["command", "apiKey", "path", "patch"]);
 const DIST_ROOT = resolve(fileURLToPath(new URL("../dist", import.meta.url)));
 const STATIC_CONTENT_TYPES: Record<string, string> = {
@@ -20,10 +24,20 @@ type JsonRecord = Record<string, unknown>;
 type DemoServerOptions = {
   readonly distRoot?: string;
   readonly realpath?: (path: string) => Promise<string>;
+  readonly now?: () => number;
+  readonly sessionTtlMs?: number;
+  readonly maxSessions?: number;
+  readonly secureCookies?: boolean;
 };
 
-function sendJson(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+interface StoredSession {
+  readonly session: DemoSession;
+  latest: DemoSnapshot;
+  expiresAt: number;
+}
+
+function sendJson(response: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
+  response.writeHead(status, { "content-type": "application/json; charset=utf-8", ...headers });
   response.end(JSON.stringify(body));
 }
 
@@ -173,6 +187,31 @@ function contentLengthExceedsLimit(request: IncomingMessage): boolean {
   return Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES;
 }
 
+function initialSnapshot(): DemoSnapshot {
+  return {
+    status: "idle",
+    runs: [],
+    trace: [],
+    verification: [],
+    dispatcherCalls: 0,
+  };
+}
+
+function cookieValue(request: IncomingMessage): string | undefined {
+  const cookie = request.headers.cookie;
+  if (cookie === undefined) return undefined;
+
+  for (const part of cookie.split(";")) {
+    const [name, value] = part.trim().split("=", 2);
+    if (name === SESSION_COOKIE_NAME && value !== undefined && /^[A-Za-z0-9_-]+$/.test(value)) return value;
+  }
+  return undefined;
+}
+
+function sessionCookie(id: string, secure: boolean): string {
+  return `${SESSION_COOKIE_NAME}=${id}; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
 async function handlePost(
   response: ServerResponse,
   path: string,
@@ -239,16 +278,52 @@ async function handlePost(
 }
 
 export function createDemoServer(options: DemoServerOptions = {}): Server {
-  const session = createDemoSession();
   const distRoot = options.distRoot ?? DIST_ROOT;
   const resolveTargetRealpath = options.realpath ?? realpath;
-  let latest: DemoSnapshot = {
-    status: "idle",
-    runs: [],
-    trace: [],
-    verification: [],
-    dispatcherCalls: 0,
-  };
+  const now = options.now ?? Date.now;
+  const sessionTtlMs = options.sessionTtlMs ?? SESSION_TTL_MS;
+  const maxSessions = options.maxSessions ?? MAX_SESSIONS;
+  const sessions = new Map<string, StoredSession>();
+
+  function removeExpiredSessions(currentTime: number): void {
+    for (const [id, stored] of sessions) {
+      if (stored.expiresAt <= currentTime) sessions.delete(id);
+    }
+  }
+
+  function evictOldestSession(): void {
+    const oldest = sessions.keys().next().value;
+    if (oldest !== undefined) sessions.delete(oldest);
+  }
+
+  function shouldUseSecureCookies(request: IncomingMessage): boolean {
+    const forwardedProto = request.headers["x-forwarded-proto"];
+    return options.secureCookies ?? (process.env.NODE_ENV === "production" || forwardedProto === "https");
+  }
+
+  function sessionFor(request: IncomingMessage, response: ServerResponse): StoredSession {
+    const currentTime = now();
+    removeExpiredSessions(currentTime);
+    const cookie = cookieValue(request);
+    const existing = cookie === undefined ? undefined : sessions.get(cookie);
+    if (existing !== undefined) {
+      existing.expiresAt = currentTime + sessionTtlMs;
+      sessions.delete(cookie ?? "");
+      sessions.set(cookie ?? "", existing);
+      return existing;
+    }
+
+    if (sessions.size >= maxSessions) evictOldestSession();
+    const id = randomBytes(24).toString("base64url");
+    const stored: StoredSession = {
+      session: createDemoSession(),
+      latest: initialSnapshot(),
+      expiresAt: currentTime + sessionTtlMs,
+    };
+    sessions.set(id, stored);
+    response.setHeader("set-cookie", sessionCookie(id, shouldUseSecureCookies(request)));
+    return stored;
+  }
 
   const server = createServer(async (request, response) => {
     const method = request.method;
@@ -259,8 +334,9 @@ export function createDemoServer(options: DemoServerOptions = {}): Server {
       sendError(response, 404, "demo_invalid_request");
       return;
     }
+    const stored = sessionFor(request, response);
     if (method === "GET" && path === "/api/session") {
-      sendJson(response, 200, latest);
+      sendJson(response, 200, stored.latest);
       return;
     }
     if (method === "POST") {
@@ -269,9 +345,9 @@ export function createDemoServer(options: DemoServerOptions = {}): Server {
         sendError(response, 400, "demo_invalid_request");
         return;
       }
-      const snapshot = await handlePost(response, path, await readJsonBody(request), session);
+      const snapshot = await handlePost(response, path, await readJsonBody(request), stored.session);
       if (snapshot !== undefined) {
-        latest = snapshot;
+        stored.latest = snapshot;
       }
       return;
     }

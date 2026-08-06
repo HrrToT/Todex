@@ -5,11 +5,11 @@ export const DEMO_SCENARIOS = Object.freeze([
 ] as const);
 
 export type DemoScenarioId = (typeof DEMO_SCENARIOS)[number];
-export type DemoStatus = "idle" | "awaiting_approval" | "completed";
+export type DemoStatus = "idle" | "awaiting_approval" | "completed" | "denied";
 export type VerificationClassification = "test_failure" | "passed";
 
 export interface DemoTraceEvent {
-  readonly type: "action_rejected" | "repair_started" | "verification_completed" | "approval_requested" | "approval_decided";
+  readonly type: "action_rejected" | "repair_started" | "verification_completed" | "approval_requested" | "approval_allowed" | "approval_denied";
   readonly reason?: "workspace_escape";
   readonly runId?: string;
 }
@@ -162,10 +162,14 @@ export function createDemoSession(): DemoSession {
         return restricted();
       }
 
-      state.runs[state.runs.length - 1] = { ...pendingRun, status: "completed" };
-      state.status = "completed";
+      const status = input.decision === "allow" ? "completed" : "denied";
+      state.runs[state.runs.length - 1] = { ...pendingRun, status };
+      state.status = status;
       state.pendingApproval = undefined;
-      state.trace.push({ type: "approval_decided", runId: pendingRun.id });
+      state.trace.push({
+        type: input.decision === "allow" ? "approval_allowed" : "approval_denied",
+        runId: pendingRun.id,
+      });
       return snapshot(state);
     },
 

@@ -71,7 +71,7 @@ Design and plan commits are `88f1dea` and `9813f20`.
 | Task 2: fixed API and static serving | `fd38bae`, `721bba4`, `8fe6c6d` | Added exact API routing, then hardened built-asset and canonical static containment. |
 | Task 3: React workbench | `773adff` | Added the fixed-scenario React workbench and its declared package/test dependencies. |
 | Review follow-ups | `107dae6`, `66f60ae` | Added server-owned approval reason/run identity with natural Tab/Space/Enter coverage, then prevented an older session read from overwriting newer UI state. |
-| Task 4: configuration and evidence | pending this commit | Adds the Render blueprint and documentation only. |
+| Task 4: configuration and evidence | `d6b2483`, `a060720` | Added the Render blueprint and dated verification record; the latter commit only corrected plan whitespace. |
 
 The dependency scope expanded during Task 3 because the demo package needed to
 declare its own React, React DOM, React type, Testing Library, and jsdom

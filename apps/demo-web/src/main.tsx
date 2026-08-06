@@ -15,7 +15,7 @@ function isDemoSnapshot(value: unknown): value is DemoSnapshot {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
   return (
-    (record.status === "idle" || record.status === "awaiting_approval" || record.status === "completed") &&
+    (record.status === "idle" || record.status === "awaiting_approval" || record.status === "completed" || record.status === "denied") &&
     Array.isArray(record.runs) &&
     Array.isArray(record.trace) &&
     Array.isArray(record.verification) &&
