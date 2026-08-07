@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.build.json && vite build --config vite.renderer.config.ts",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3,keytar",
     "smoke": "pnpm build && electron ./dist/main/smoke.js",
-    "smoke:electron": "pnpm run rebuild:native && pnpm run smoke"
+    "smoke:electron": "pnpm run rebuild:native && pnpm run smoke",
+    "package:win": "pnpm build && pnpm dlx electron-builder@26.0.12 --config electron-builder.yml --win nsis --x64"
   },
   "dependencies": {
     "@todex/contracts": "workspace:*",

@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    env:
+      TODEX_DEMO_URL: ${{ vars.TODEX_DEMO_URL }}
+      TODEX_RELEASE_ARTIFACTS: apps/desktop/release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test --run
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm --filter @todex/desktop package:win
+      - run: pnpm verify:release
+      - name: Upload installer to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apps/desktop/release/*.exe
