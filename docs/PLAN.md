@@ -595,7 +595,7 @@ Run: `git commit -m "feat: add Todex desktop workbench"`
 
 **依赖：** T-008、T-010。
 **建议责任：** GLM，可独立完成。
-**状态：** 实现完成并完成本地配置/浏览器验证；尚未记录 PR、CI、merge 或 Render 部署。设计/计划 commits 为 `88f1dea`、`9813f20`；实现链为 `47d7956`、`533539e`、`b218681`、`fd38bae`、`721bba4`、`8fe6c6d`、`773adff`、`107dae6`、`66f60ae`。详见 [T-011 验证](verification/2026-08-05-t-011-public-mock-demo.md) 与 [任务卡](task-cards/T-011-public-mock-demo.md)。
+**状态：** 已完成并合入 `main`。设计/计划 commits 为 `88f1dea`、`9813f20`；实现链为 `47d7956`、`533539e`、`b218681`、`fd38bae`、`721bba4`、`8fe6c6d`、`773adff`、`107dae6`、`66f60ae`、`178ae1b`；PR #10 的 GitHub Actions CI 已通过，merge commit 为 `a1a721b`。Render 部署仍未完成。详见 [T-011 验证](verification/2026-08-05-t-011-public-mock-demo.md) 与 [任务卡](task-cards/T-011-public-mock-demo.md)。
 
 **Files:**
 - Create: `apps/demo-web/package.json`
@@ -657,6 +657,7 @@ or independent code-quality-review evidence is implied.
 
 **依赖：** T-008、T-009、T-010、T-011。
 **建议责任：** Codex 主导，所有辅助模型结果进入最终两阶段评审。
+**状态：** 实现中；本地发布门禁、打包配置、CI/release workflow 和基础文档已完成，真实 Windows installer、GitHub Release、Render URL 和最终 Electron 生命周期证据待外部环境验证。
 
 **Files:**
 - Modify: `.github/workflows/ci.yml`
@@ -668,7 +669,7 @@ or independent code-quality-review evidence is implied.
 - Modify: `README.md`
 - Modify: `docs/PLAN.md`
 
-- [ ] **Step 1: Write failing release-verification tests**
+- [x] **Step 1: Write failing release-verification tests**
 
 ```ts
 it("requires a Windows x64 NSIS artifact and a public demo URL", async () => {
@@ -678,12 +679,12 @@ it("requires a Windows x64 NSIS artifact and a public demo URL", async () => {
 });
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run: `pnpm verify:release`
 Expected: FAIL because no artifact or configured Demo URL exists.
 
-- [ ] **Step 3: Implement packaging and CI**
+- [x] **Step 3: Implement packaging and CI**
 
 Configure electron-builder for unsigned NSIS x64 output. CI must run `pnpm lint`, `pnpm test --run`, `pnpm typecheck`, and `pnpm build` on push; release workflow must upload the installer artifact. Add `verify:release` that checks artifact metadata and an HTTPS Demo URL. Update README only with commands actually executed, Credential Manager steps, SmartScreen disclosure, Render URL, limitations and directory structure.
 
