@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 
 export type ReleaseCheck = {
@@ -23,7 +23,12 @@ const WINDOWS_NSIS_NAME = /^Todex-[0-9A-Za-z.+-]+-win-x64\.exe$/i;
 async function hasWindowsNsisArtifact(artifactsDir: string): Promise<boolean> {
   try {
     const entries = await readdir(resolve(artifactsDir), { withFileTypes: true });
-    return entries.some((entry) => entry.isFile() && WINDOWS_NSIS_NAME.test(basename(entry.name)));
+    const installer = entries.find((entry) => entry.isFile() && WINDOWS_NSIS_NAME.test(basename(entry.name)));
+    const metadata = entries.find((entry) => entry.isFile() && entry.name.toLowerCase() === "latest.yml");
+    if (installer === undefined || metadata === undefined) return false;
+
+    const metadataText = await readFile(resolve(artifactsDir, metadata.name), "utf8");
+    return metadataText.includes(`path: ${installer.name}`) && /(?:^|\n)sha512:\s*\S+/.test(metadataText);
   } catch {
     return false;
   }

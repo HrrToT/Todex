@@ -17,7 +17,10 @@ async function makeArtifacts(files: Record<string, string> = {}): Promise<string
 
 describe("verifyRelease", () => {
   it("requires a Windows x64 NSIS artifact and an HTTPS Demo URL", async () => {
-    const artifactsDir = await makeArtifacts({ "Todex-0.1.0-win-x64.exe": "installer" });
+    const artifactsDir = await makeArtifacts({
+      "Todex-0.1.0-win-x64.exe": "installer",
+      "latest.yml": "path: Todex-0.1.0-win-x64.exe\nsha512: fixture-sha512\n",
+    });
 
     const result = await verifyRelease({
       artifactsDir,
@@ -59,6 +62,19 @@ describe("verifyRelease", () => {
 
     expect(result.allPassed).toBe(false);
     expect(result.checks).toContainEqual({ name: "windows-nsis", passed: false });
+  });
+
+  it("rejects a named installer when electron-builder metadata is absent or does not match", async () => {
+    const missingMetadata = await makeArtifacts({ "Todex-0.1.0-win-x64.exe": "installer" });
+    const mismatchedMetadata = await makeArtifacts({
+      "Todex-0.1.0-win-x64.exe": "installer",
+      "latest.yml": "path: another-installer.exe\nsha512: fixture-sha512\n",
+    });
+
+    for (const artifactsDir of [missingMetadata, mismatchedMetadata]) {
+      const result = await verifyRelease({ artifactsDir, demoUrl: "https://todex-demo.example.com" });
+      expect(result.checks).toContainEqual({ name: "windows-nsis", passed: false });
+    }
   });
 
   it("keeps the CLI default artifact directory aligned with electron-builder output", async () => {
