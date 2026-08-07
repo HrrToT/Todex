@@ -546,7 +546,7 @@ Implementation update (2026-07-19): renderer-local components are used under `ap
 **建议责任：** Qwen 负责 UI components；Codex 审查 Open Design 和可访问性。
 
 冻结设计与实施计划：[T-010 设计](superpowers/specs/2026-07-19-t-010-codex-style-workbench-design.md)、[T-010 实施计划](superpowers/plans/2026-07-19-t-010-codex-style-workbench.md)、[任务卡](task-cards/T-010-codex-style-workbench.md)。T-010 实现深色 Codex 风格 Renderer、受控 Mock Run 和 T-009 typed IPC 展示边界；不实现真实 LLM、shell、文件修改或安装包。
-**状态：** 设计已批准，实施计划等待审阅。
+**状态：** 已合并并完成 renderer 范围的验证：实现 commit `3946bec` 已由 PR #9 的 merge commit `05008d3` 合入 `main`。验证记录见 [T-010 验证](verification/2026-07-19-t-010-codex-style-workbench.md)；该记录只声明 React renderer/browser 证据，不把已知 Electron lifecycle 限制误写为已验证。
 
 **Files:**
 - Create: `apps/desktop/src/renderer/App.tsx`
@@ -595,6 +595,7 @@ Run: `git commit -m "feat: add Todex desktop workbench"`
 
 **依赖：** T-008、T-010。
 **建议责任：** GLM，可独立完成。
+**状态：** 实现完成并完成本地配置/浏览器验证；尚未记录 PR、CI、merge 或 Render 部署。设计/计划 commits 为 `88f1dea`、`9813f20`；实现链为 `47d7956`、`533539e`、`b218681`、`fd38bae`、`721bba4`、`8fe6c6d`、`773adff`、`107dae6`、`66f60ae`。详见 [T-011 验证](verification/2026-08-05-t-011-public-mock-demo.md) 与 [任务卡](task-cards/T-011-public-mock-demo.md)。
 
 **Files:**
 - Create: `apps/demo-web/package.json`
@@ -634,6 +635,23 @@ Expected: exit code 0.
 
 Run: `git add apps/demo-web render.yaml`
 Run: `git commit -m "feat: add restricted public mock demo"`
+
+#### T-011 Delivery Record (2026-08-05)
+
+T-011 keeps the public host fail-closed: it accepts only the three named
+fixtures, exact API shapes, and server-owned approval decisions, while built
+static assets are constrained to the canonical demo `dist` root. Task 1 session
+commits are `47d7956`, `533539e`, and `b218681`; Task 2 API/static-serving
+commits are `fd38bae`, `721bba4`, and `8fe6c6d`; Task 3 is `773adff` with
+review follow-ups `107dae6` and `66f60ae`. The React dependency/test scope was
+declared in the demo package and lockfile by `773adff`, not by Task 4.
+
+Task 4 adds root-level `render.yaml` with the verified pnpm build/start
+commands, Node runtime, no unsupported `rootDir`, and the dated local evidence
+record. Fresh local verification includes the demo suite (3 files/28 tests),
+root suite (23 files/439 tests), typecheck, lint, production build, built `/`
+HTTP response, and `1440x900`/`390x844` browser checks. No deployment, PR, CI,
+or independent code-quality-review evidence is implied.
 
 ### Task 12: T-012 打包、CI、发布文档与端到端验收
 

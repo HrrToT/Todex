@@ -23,6 +23,9 @@
     "apps/desktop/test/**/*.tsx",
     "apps/desktop/vitest.config.ts",
     "apps/desktop/vite.renderer.config.ts",
+    "apps/demo-web/src/**/*.ts",
+    "apps/demo-web/test/**/*.ts",
+    "apps/demo-web/vite.config.ts",
     "scripts/**/*.ts"
   ]
 }
