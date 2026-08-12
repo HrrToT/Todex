@@ -1,3 +1,5 @@
+import { t, type Locale } from "./i18n.js";
+
 export type RunPhase = "idle" | "running" | "awaiting_approval" | "failed" | "completed";
 export type InspectorTab = "diff" | "approval" | "trace" | "memory";
 export type ApprovalDecision = "once" | "run" | "command_prefix" | "deny";
@@ -22,30 +24,34 @@ export interface WorkbenchSnapshot {
   approvalId?: string;
 }
 
-const idleEvents: readonly StreamEvent[] = [
-  { id: "idle", kind: "agent", title: "Ready for a task", detail: "The run stream will appear here." },
-];
+function idleEvents(locale: Locale): readonly StreamEvent[] {
+  return [{ id: "idle", kind: "agent", title: t(locale, "demo.readyForTask"), detail: t(locale, "demo.streamWillAppear") }];
+}
 
-function visibleTask(task: string): string {
+function visibleTask(task: string, locale: Locale): string {
   return /(?:api[_-]?key|token|credentialref)\s*=/i.test(task)
-    ? "Sensitive task content withheld"
+    ? t(locale, "demo.withheldTask")
     : task;
 }
 
 export class DemoRunController {
-  private snapshot: WorkbenchSnapshot = { phase: "idle", task: "", events: idleEvents, inspectorTab: null };
+  private snapshot: WorkbenchSnapshot;
+
+  constructor(private readonly locale: Locale = "zh-CN") {
+    this.snapshot = { phase: "idle", task: "", events: idleEvents(locale), inspectorTab: null };
+  }
 
   current(): WorkbenchSnapshot {
     return this.snapshot;
   }
 
   start(task: string): WorkbenchSnapshot {
-    const rawTask = task.trim() || "Inspect the current workspace";
-    const normalizedTask = visibleTask(rawTask);
+    const rawTask = task.trim() || t(this.locale, "demo.defaultTask");
+    const normalizedTask = visibleTask(rawTask, this.locale);
     const requestsApproval = /install|approve|permission/i.test(rawTask);
     const baseEvents: StreamEvent[] = [
       { id: "task", kind: "user", title: "You", detail: normalizedTask },
-      { id: "plan", kind: "agent", title: "Todex", detail: "I will inspect the workspace and report the next safe step." },
+      { id: "plan", kind: "agent", title: "Todex", detail: t(this.locale, "demo.plan") },
       { id: "read", kind: "tool", title: "read_file", detail: "src/calculator.ts" },
     ];
 
@@ -53,7 +59,7 @@ export class DemoRunController {
       this.snapshot = {
         phase: "awaiting_approval",
         task: normalizedTask,
-        events: [...baseEvents, { id: "approval", kind: "outcome", title: "Approval required", detail: "A scoped command needs your decision." }],
+        events: [...baseEvents, { id: "approval", kind: "outcome", title: t(this.locale, "demo.approvalRequired"), detail: t(this.locale, "demo.scopedCommandNeedsDecision") }],
         inspectorTab: "approval",
         approvalId: "approval-demo-1",
       };
@@ -65,8 +71,8 @@ export class DemoRunController {
       task: normalizedTask,
       events: [
         ...baseEvents,
-        { id: "patch", kind: "patch", title: "Patch prepared", detail: "src/calculator.ts (+1 -1)" },
-        { id: "verify", kind: "verification", title: "Verification failed", detail: "Test feedback is available in Inspector." },
+        { id: "patch", kind: "patch", title: t(this.locale, "demo.patchPrepared"), detail: "src/calculator.ts (+1 -1)" },
+        { id: "verify", kind: "verification", title: t(this.locale, "demo.verificationFailed"), detail: t(this.locale, "demo.testFeedback") },
       ],
       inspectorTab: "diff",
     };
@@ -87,8 +93,8 @@ export class DemoRunController {
         {
           id: "decision",
           kind: "outcome",
-          title: denied ? "Approval denied" : "Approval recorded",
-          detail: denied ? "The command was not dispatched." : "The scoped action may continue.",
+          title: denied ? t(this.locale, "demo.approvalDenied") : t(this.locale, "demo.approvalRecorded"),
+          detail: denied ? t(this.locale, "demo.commandNotDispatched") : t(this.locale, "demo.scopedActionMayContinue"),
         },
       ],
     };

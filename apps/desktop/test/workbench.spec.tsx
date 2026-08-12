@@ -16,16 +16,16 @@ describe("Codex-style workbench", () => {
   it("renders a workspace rail, collapsed Inspector, bottom composer, and idle state", () => {
     render(<WorkbenchApp />);
 
-    expect(screen.getByRole("navigation", { name: "Workspace navigation" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Open Inspector" })).toBeVisible();
-    expect(screen.getByRole("textbox", { name: "Task or continuation" })).toBeVisible();
-    expect(screen.getByText("Idle")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Run" })).not.toHaveTextContent("Run");
+    expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开检查器" })).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "任务或继续说明" })).toBeVisible();
+    expect(screen.getByText("空闲")).toBeVisible();
+    expect(screen.getByRole("button", { name: "开始运行" })).toBeVisible();
   });
 
   it("opens the Diff Inspector for deterministic verification feedback", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp />);
+    render(<WorkbenchApp locale="en-US" />);
 
     await user.type(screen.getByRole("textbox", { name: "Task or continuation" }), "Repair calculation");
     await user.click(screen.getByRole("button", { name: "Run" }));
@@ -38,7 +38,7 @@ describe("Codex-style workbench", () => {
   it("sends only the typed approval id and decision, then returns focus to the composer", async () => {
     const user = userEvent.setup();
     const decisions: Array<{ approvalId: string; decision: string }> = [];
-    render(<WorkbenchApp onApprovalDecision={(input) => decisions.push(input)} />);
+    render(<WorkbenchApp locale="en-US" onApprovalDecision={(input) => decisions.push(input)} />);
 
     const composer = screen.getByRole("textbox", { name: "Task or continuation" });
     await user.type(composer, "Install a package");
@@ -58,7 +58,7 @@ describe("Codex-style workbench", () => {
         decisions.push(input);
       },
     };
-    render(<WorkbenchApp approvalBridge={bridge} />);
+    render(<WorkbenchApp locale="en-US" approvalBridge={bridge} />);
 
     await user.click(screen.getByRole("button", { name: "Open Inspector" }));
     await user.click(screen.getByRole("button", { name: "Pin Inspector" }));
@@ -73,7 +73,7 @@ describe("Codex-style workbench", () => {
 
   it("does not render likely secret values from task input", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp />);
+    render(<WorkbenchApp locale="en-US" />);
 
     await user.type(screen.getByRole("textbox", { name: "Task or continuation" }), "Fix it API_KEY=secret-value credentialRef=prod");
     await user.click(screen.getByRole("button", { name: "Run" }));

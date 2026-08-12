@@ -23,17 +23,27 @@ import {
   type WorkbenchSnapshot,
 } from "./run-controller.js";
 import type { ApprovalBridge } from "./bridge.js";
+import { t, type Locale } from "./i18n.js";
 import "./styles.css";
 
-const tabs: ReadonlyArray<{ id: InspectorTab; label: string }> = [
-  { id: "diff", label: "Diff" },
-  { id: "approval", label: "Approval" },
-  { id: "trace", label: "Trace" },
-  { id: "memory", label: "Memory" },
-];
+function tabs(locale: Locale): ReadonlyArray<{ id: InspectorTab; label: string }> {
+  return [
+    { id: "diff", label: t(locale, "workbench.diff") },
+    { id: "approval", label: t(locale, "workbench.approval") },
+    { id: "trace", label: t(locale, "workbench.trace") },
+    { id: "memory", label: t(locale, "workbench.memory") },
+  ];
+}
 
-function phaseLabel(snapshot: WorkbenchSnapshot): string {
-  return snapshot.phase.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+function phaseLabel(snapshot: WorkbenchSnapshot, locale: Locale): string {
+  const keys = {
+    idle: "phase.idle",
+    running: "phase.running",
+    awaiting_approval: "phase.awaitingApproval",
+    failed: "phase.failed",
+    completed: "phase.completed",
+  } as const;
+  return t(locale, keys[snapshot.phase]);
 }
 
 function eventIcon(kind: StreamEvent["kind"]) {
@@ -48,12 +58,14 @@ function eventIcon(kind: StreamEvent["kind"]) {
 export interface WorkbenchAppProps {
   approvalBridge?: ApprovalBridge;
   onApprovalDecision?: (input: { approvalId: string; decision: ApprovalDecision }) => void;
+  locale?: Locale;
 }
 
-export function WorkbenchApp({ approvalBridge, onApprovalDecision }: WorkbenchAppProps): JSX.Element {
+export function WorkbenchApp({ approvalBridge, onApprovalDecision, locale = "zh-CN" }: WorkbenchAppProps): JSX.Element {
   const controllerRef = useRef<DemoRunController | null>(null);
-  if (!controllerRef.current) controllerRef.current = new DemoRunController();
+  if (!controllerRef.current) controllerRef.current = new DemoRunController(locale);
   const controller = controllerRef.current;
+  const inspectorTabs = tabs(locale);
   const [snapshot, setSnapshot] = useState<WorkbenchSnapshot>(() => controller.current());
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<InspectorTab>("trace");
@@ -85,32 +97,32 @@ export function WorkbenchApp({ approvalBridge, onApprovalDecision }: WorkbenchAp
 
   return (
     <main className="workbench-shell">
-      <aside className="workspace-rail" role="navigation" aria-label="Workspace navigation">
+      <aside className="workspace-rail" role="navigation" aria-label={t(locale, "workbench.workspaceNavigation")}>
         <div className="brand-mark" aria-label="Todex">
           <Command size={18} aria-hidden="true" />
           <span>Todex</span>
         </div>
-        <button className="project-switcher" type="button" aria-label="Current workspace">
+        <button className="project-switcher" type="button" aria-label={t(locale, "workbench.currentWorkspace")}>
           <FolderKanban size={16} aria-hidden="true" />
           <span>calculator-lab</span>
           <ChevronRight size={14} aria-hidden="true" />
         </button>
-        <section className="rail-section" aria-label="Recent runs">
-          <p>Recent runs</p>
-          <button className="run-row selected" type="button"><span className="run-dot" />Repair calculation</button>
-          <button className="run-row" type="button"><span className="run-dot muted" />Inspect tests</button>
+        <section className="rail-section" aria-label={t(locale, "workbench.recentRuns")}>
+          <p>{t(locale, "workbench.recentRuns")}</p>
+          <button className="run-row selected" type="button"><span className="run-dot" />{t(locale, "workbench.repairCalculation")}</button>
+          <button className="run-row" type="button"><span className="run-dot muted" />{t(locale, "workbench.inspectTests")}</button>
         </section>
-        <nav className="rail-nav" aria-label="Workbench views">
-          <button type="button"><PanelRight size={16} aria-hidden="true" /><span>Trace</span></button>
-          <button type="button"><BookOpenText size={16} aria-hidden="true" /><span>Memory</span></button>
+        <nav className="rail-nav" aria-label={t(locale, "workbench.views")}>
+          <button type="button"><PanelRight size={16} aria-hidden="true" /><span>{t(locale, "workbench.trace")}</span></button>
+          <button type="button"><BookOpenText size={16} aria-hidden="true" /><span>{t(locale, "workbench.memory")}</span></button>
         </nav>
       </aside>
 
       <section className="execution-area" aria-label="Execution stream">
         <header className="stream-header">
-          <div><span className="eyebrow">Workspace</span><h1>calculator-lab</h1></div>
-          <div className={`phase phase-${snapshot.phase}`}><span aria-hidden="true" />{phaseLabel(snapshot)}</div>
-          <button className="icon-button" type="button" title="Open Inspector" aria-label="Open Inspector" onClick={() => openInspector("trace")}>
+          <div><span className="eyebrow">{t(locale, "workbench.workspace")}</span><h1>calculator-lab</h1></div>
+          <div className={`phase phase-${snapshot.phase}`}><span aria-hidden="true" />{phaseLabel(snapshot, locale)}</div>
+          <button className="icon-button" type="button" title={t(locale, "workbench.openInspector")} aria-label={t(locale, "workbench.openInspector")} onClick={() => openInspector("trace")}>
             <PanelRight size={17} aria-hidden="true" />
           </button>
         </header>
@@ -132,37 +144,37 @@ export function WorkbenchApp({ approvalBridge, onApprovalDecision }: WorkbenchAp
         </div>
 
         <form className="task-composer" onSubmit={(event) => { event.preventDefault(); submitTask(); }}>
-          <label htmlFor="task-input">Task or continuation</label>
+          <label htmlFor="task-input">{t(locale, "workbench.task")}</label>
           <textarea
             ref={composerRef}
             id="task-input"
             value={task}
             onChange={(event) => setTask(event.target.value)}
-            placeholder="Describe the next thing to inspect or change"
+            placeholder={t(locale, "workbench.taskPlaceholder")}
             rows={2}
           />
-          <button className="send-button" type="submit" aria-label="Run" title="Run"><Play size={15} aria-hidden="true" /></button>
+          <button className="send-button" type="submit" aria-label={t(locale, "workbench.run")} title={t(locale, "workbench.run")}><Play size={15} aria-hidden="true" /></button>
         </form>
       </section>
 
       {inspectorOpen ? (
         <aside className="inspector" aria-label="Inspector">
-          <header><div><span className="eyebrow">Inspector</span><h2>{tabs.find((tab) => tab.id === activeTab)?.label}</h2></div><button className="icon-button" type="button" aria-label="Pin Inspector" title="Pin Inspector" aria-pressed={inspectorPinned} onClick={() => setInspectorPinned((value) => !value)}><Pin size={17} aria-hidden="true" /></button><button className="icon-button" type="button" aria-label="Close Inspector" title="Close Inspector" onClick={() => setInspectorOpen(false)}><X size={17} aria-hidden="true" /></button></header>
-          <div className="inspector-tabs" role="tablist" aria-label="Inspector tabs">
-            {tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={tab.id === activeTab} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+          <header><div><span className="eyebrow">{t(locale, "workbench.inspector")}</span><h2>{inspectorTabs.find((tab) => tab.id === activeTab)?.label}</h2></div><button className="icon-button" type="button" aria-label={t(locale, "workbench.pinInspector")} title={t(locale, "workbench.pinInspector")} aria-pressed={inspectorPinned} onClick={() => setInspectorPinned((value) => !value)}><Pin size={17} aria-hidden="true" /></button><button className="icon-button" type="button" aria-label={t(locale, "workbench.closeInspector")} title={t(locale, "workbench.closeInspector")} onClick={() => setInspectorOpen(false)}><X size={17} aria-hidden="true" /></button></header>
+          <div className="inspector-tabs" role="tablist" aria-label={t(locale, "workbench.inspectorTabs")}>
+            {inspectorTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={tab.id === activeTab} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
           </div>
-          <InspectorContent snapshot={snapshot} tab={activeTab} onDecision={decide} />
+          <InspectorContent snapshot={snapshot} tab={activeTab} onDecision={decide} locale={locale} />
         </aside>
       ) : null}
     </main>
   );
 }
 
-function InspectorContent({ snapshot, tab, onDecision }: { snapshot: WorkbenchSnapshot; tab: InspectorTab; onDecision: (decision: ApprovalDecision) => void }): JSX.Element {
+function InspectorContent({ snapshot, tab, onDecision, locale }: { snapshot: WorkbenchSnapshot; tab: InspectorTab; onDecision: (decision: ApprovalDecision) => void; locale: Locale }): JSX.Element {
   if (tab === "approval" && snapshot.phase === "awaiting_approval") {
-    return <section className="inspector-content"><p className="inspector-kicker">Approval required</p><h3>Scoped command request</h3><p>A project command needs a decision before it can run.</p><div className="approval-actions"><button type="button" onClick={() => onDecision("once")}>Allow once</button><button type="button" onClick={() => onDecision("run")}>Allow run</button><button className="danger" type="button" onClick={() => onDecision("deny")}>Deny</button></div></section>;
+    return <section className="inspector-content"><p className="inspector-kicker">{t(locale, "workbench.approvalRequired")}</p><h3>{t(locale, "workbench.scopedCommandRequest")}</h3><p>{t(locale, "workbench.commandNeedsDecision")}</p><div className="approval-actions"><button type="button" onClick={() => onDecision("once")}>{t(locale, "workbench.allowOnce")}</button><button type="button" onClick={() => onDecision("run")}>{t(locale, "workbench.allowRun")}</button><button className="danger" type="button" onClick={() => onDecision("deny")}>{t(locale, "workbench.deny")}</button></div></section>;
   }
-  if (tab === "diff") return <section className="inspector-content"><p className="inspector-kicker">Patch summary</p><h3>src/calculator.ts</h3><pre aria-label="Patch summary"><code>- return left - right{`\n`}+ return left + right</code></pre></section>;
-  if (tab === "memory") return <section className="inspector-content"><p className="inspector-kicker">Selected memory</p><h3>No stored context selected</h3><p>Only verified, non-sensitive project facts will appear here.</p></section>;
-  return <section className="inspector-content"><p className="inspector-kicker">Trace timeline</p><ol className="trace-list">{snapshot.events.map((event, index) => <li key={event.id}><span>{index + 1}</span><div><strong>{event.title}</strong><p>{event.detail}</p></div></li>)}</ol></section>;
+  if (tab === "diff") return <section className="inspector-content"><p className="inspector-kicker">{t(locale, "workbench.patchSummary")}</p><h3>src/calculator.ts</h3><pre aria-label={t(locale, "workbench.patchSummary")}><code>- return left - right{`\n`}+ return left + right</code></pre></section>;
+  if (tab === "memory") return <section className="inspector-content"><p className="inspector-kicker">{t(locale, "workbench.selectedMemory")}</p><h3>{t(locale, "workbench.noStoredContext")}</h3><p>{t(locale, "workbench.memorySafety")}</p></section>;
+  return <section className="inspector-content"><p className="inspector-kicker">{t(locale, "workbench.traceTimeline")}</p><ol className="trace-list">{snapshot.events.map((event, index) => <li key={event.id}><span>{index + 1}</span><div><strong>{event.title}</strong><p>{event.detail}</p></div></li>)}</ol></section>;
 }
