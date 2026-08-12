@@ -2,6 +2,7 @@
 node_modules/
 dist/
 out/
+apps/desktop/release/
 coverage/
 playwright-report/
 test-results/

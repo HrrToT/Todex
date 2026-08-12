@@ -40,4 +40,10 @@ describe("desktop package scripts", () => {
     expect(config).toContain("provider: generic");
     expect(config).toContain("url: https://github.com/HrrToT/Todex/releases/download/v${version}");
   });
+
+  it("builds renderer assets with relative URLs for the packaged file document", () => {
+    const config = readFileSync(new URL("../vite.renderer.config.ts", import.meta.url), "utf8");
+
+    expect(config).toContain('base: "./"');
+  });
 });

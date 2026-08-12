@@ -22,6 +22,19 @@
 - Render Demo 已上线：`https://todex-mock-demo.onrender.com`；三个固定场景均完成验收。
 - 本机安装后的 Electron 生命周期与 BrowserWindow 交互没有在本次发布后重新验收；T-009 的 `0xC0000005` 环境限制仍单独保留。
 
+## v0.1.1 Renderer 补丁（待发布）
+
+- `v0.1.0` 的已安装窗口被实机发现为白屏：主进程实际加载了
+  `data:text/html,<main></main>`，没有加载已打包的 React Renderer。
+- 修复将主进程入口改为 `dist/renderer/index.html` 的 `file:` URL，并将
+  Vite 资源基址改为相对 `./`，以便安装包中的 HTML 能解析 JS/CSS。
+- 回归测试先红后绿，覆盖“不得加载 data 空页”和“打包资源必须使用相对 URL”。
+  聚焦测试 10/10 通过，桌面构建成功；本地 `v0.1.1` NSIS 包和
+  `verify:release` 已通过，未安装的 `win-unpacked` 实机窗口已由用户确认
+  显示工作台，不再白屏。
+- 本机完整 Vitest 仍受 `better-sqlite3` Electron ABI 135 与 Node 24 ABI 137
+  不匹配影响；发布前以 GitHub Windows Node 20 CI 作为完整回归门槛。
+
 ## 允许修改
 
 `.github/workflows/ci.yml`、`.github/workflows/release.yml`、`apps/desktop/electron-builder.yml`、`apps/desktop/package.json`、`package.json`、`scripts/verify-release.ts`、对应测试、`README.md`、`docs/PLAN.md`、`docs/AGENT_LOG.md` 和 `docs/verification/` 中的 T-012 记录。
