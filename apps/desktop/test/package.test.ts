@@ -11,4 +11,14 @@ describe("desktop package scripts", () => {
     expect(manifest.scripts.smoke).not.toContain("rebuild:native");
     expect(manifest.scripts["smoke:electron"]).toBe("pnpm run rebuild:native && pnpm run smoke");
   });
+
+  it("declares Electron as a build-time dependency for electron-builder", () => {
+    const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+
+    expect(manifest.dependencies.electron).toBeUndefined();
+    expect(manifest.devDependencies.electron).toBeDefined();
+  });
 });
