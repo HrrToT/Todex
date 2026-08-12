@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   windows-installer:
-    runs-on: windows-latest
+    # Pin the runner while windows-latest uses a Visual Studio version that
+    # node-gyp cannot identify for better-sqlite3's native install.
+    runs-on: windows-2022
     env:
       TODEX_DEMO_URL: ${{ vars.TODEX_DEMO_URL }}
       TODEX_RELEASE_ARTIFACTS: apps/desktop/release
