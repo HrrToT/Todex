@@ -21,4 +21,15 @@ describe("desktop package scripts", () => {
     expect(manifest.dependencies.electron).toBeUndefined();
     expect(manifest.devDependencies.electron).toBeDefined();
   });
+
+  it("uses a lockfile-managed electron-builder package for Windows installers", () => {
+    const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+      scripts: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+
+    expect(manifest.scripts["package:win"]).not.toContain("pnpm dlx electron-builder");
+    expect(manifest.scripts["package:win"]).toContain("electron-builder");
+    expect(manifest.devDependencies["electron-builder"]).toBeDefined();
+  });
 });
