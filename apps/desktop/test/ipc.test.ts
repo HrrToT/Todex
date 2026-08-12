@@ -15,6 +15,7 @@ class FakeIpcMain {
 
 class FakeBrowserWindow {
   static latestOptions: Record<string, unknown> | undefined;
+  readonly loadURL = vi.fn(() => Promise.resolve());
   readonly webContents = {
     on: vi.fn(),
     setWindowOpenHandler: vi.fn(),
@@ -24,9 +25,6 @@ class FakeBrowserWindow {
     FakeBrowserWindow.latestOptions = options;
   }
 
-  loadURL(): Promise<void> {
-    return Promise.resolve();
-  }
 }
 
 const EXPECTED_CHANNELS = [
@@ -122,5 +120,15 @@ describe("desktop IPC", () => {
     const event = { preventDefault: vi.fn() };
     navigationHandler(event);
     expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it("loads the packaged renderer document instead of an empty data page", () => {
+    const window = createDesktopWindow(FakeBrowserWindow);
+    const fakeWindow = window as FakeBrowserWindow;
+
+    expect(fakeWindow.loadURL).toHaveBeenCalledWith(
+      expect.stringMatching(/^file:.*renderer[\\/]index\.html$/),
+    );
+    expect(fakeWindow.loadURL).not.toHaveBeenCalledWith(expect.stringMatching(/^data:text\/html/));
   });
 });

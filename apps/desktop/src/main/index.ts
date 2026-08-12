@@ -4,7 +4,7 @@ import { KeytarCredentialAdapter } from "./credential-store.js";
 import { registerTodexIpc } from "./ipc.js";
 import { WorkspaceHost } from "./workspace-host.js";
 
-export const DESKTOP_HOST_VERSION = "0.1.0";
+export const DESKTOP_HOST_VERSION = "0.1.1";
 
 export interface BrowserWindowLike {
   loadURL(url: string): Promise<void> | void;
@@ -34,7 +34,7 @@ export function createDesktopWindow(
   });
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  void window.loadURL("data:text/html,<main></main>");
+  void window.loadURL(new URL("../renderer/index.html", import.meta.url).href);
   return window;
 }
 

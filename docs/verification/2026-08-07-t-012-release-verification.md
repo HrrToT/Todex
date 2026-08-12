@@ -45,3 +45,27 @@ BrowserWindow interaction test. The pre-existing T-009 environment issue
 (`0xC0000005` during Electron lifecycle/shutdown) remains recorded separately.
 The successful hosted GitHub Windows workflow is the release-build evidence;
 it is not evidence that the local native-module lifecycle limitation disappeared.
+
+## v0.1.1 Renderer white-screen repair (pending publication)
+
+The installed `v0.1.0` window was observed as a white page. Root-cause
+inspection found that `createDesktopWindow()` loaded the literal empty page
+`data:text/html,<main></main>` rather than the packaged React entry.
+
+RED: the new desktop test expected a `file:` URL ending in
+`renderer/index.html`; it received the empty `data:` URL. GREEN: the main
+process loads the packaged renderer document and Vite emits `./assets/...`
+references suitable for that `file:` document. Focused desktop tests passed
+10/10 and `pnpm --filter @todex/desktop build` generated the expected HTML.
+
+The local `0.1.1` NSIS package passed `verify:release` against the HTTPS Demo
+URL. The non-installed `release/win-unpacked/Todex.exe` was launched with a
+temporary user-data directory; the user confirmed the workbench rendered
+instead of a white page. This is not yet GitHub Release evidence: publication
+waits for the patch PR and its clean Windows Node 20 CI run.
+
+The local root suite had 440 passing tests and 17 failures caused only by a
+known native ABI mismatch: the locally rebuilt `better-sqlite3` uses Electron
+ABI 135, while the available Node 24 process requires ABI 137. Typecheck,
+lint, recursive build, and `git diff --check` passed. The hosted release
+workflow remains the required complete-native test and package authority.

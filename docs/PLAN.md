@@ -714,6 +714,14 @@ Render Demo is live at https://todex-mock-demo.onrender.com. See
 `docs/verification/2026-08-07-t-012-release-verification.md` for the retained
 local Electron lifecycle verification boundary.
 
+Patch update (2026-08-12): an installed `v0.1.0` window exposed a Renderer
+white screen. The root cause was the main process loading a literal empty
+`data:` document rather than the built React entry. The pending `v0.1.1`
+repair loads `dist/renderer/index.html` via `file:` and uses a relative Vite
+asset base. Its regression test was observed red then green; the unpacked
+Windows build was visually confirmed to render. Publication remains gated on
+the patch PR's clean GitHub Windows CI and a new tag release.
+
 ## Plan Self-Review
 
 ### Spec coverage
