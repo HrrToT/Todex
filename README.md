@@ -99,6 +99,23 @@ docs/               规约、计划、任务卡、验证证据和过程记录
 
 ## 已知限制
 
+### T-013 本地真实 Agent（待审查和验收）
+
+桌面端的 T-013 实现已在本地完成：用户可通过原生目录选择器导入本地 Node.js 或
+Python 项目，保存一个 OpenAI Chat Completions 兼容的 `baseUrl` 与模型名称，并在
+Windows Credential Manager 保存 API Key。运行时 API Key 仅由 Electron main process
+读取；不会被写入 SQLite、trace、导出数据或 Renderer 运行投影。
+
+真实运行仍有明确治理边界：工作区内的读取、搜索和普通 unified diff 补丁可自动执行；
+每次已确认命令都必须先经过人工审批，审批前不会启动子进程。目录逃逸、符号链接逃逸、
+敏感文件、复杂 shell 与提权操作会在分发前被拒绝。模型必须返回完整 JSON Action；
+首次非法响应只会得到一次 JSON-only 格式修复请求，第二次非法响应停止为
+`model_protocol_invalid`。
+
+这不是已发布的任意仓库 Agent 验收结论。T-013 尚待独立规约/安全审查、GitHub CI、
+Windows 安装包中的手工真实模型验收。Render Demo 继续严格为固定 Mock 场景，不能输入
+真实 API Key、本地路径、任意命令、补丁、文件上传或模型 URL。
+
 - 当前正式桌面发布仅面向 Windows x64；macOS 和 Linux 不在本版本发布范围内。
 - `v0.1.0` 的安装版存在已确认的 Renderer 白屏问题；请使用已发布的
   `v0.1.1`。正式安装后的可见工作台内容仍应由使用者完成一次人工确认；安装文件

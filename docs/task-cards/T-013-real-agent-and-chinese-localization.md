@@ -1,6 +1,6 @@
 # T-013: 真实桌面 Agent 与中文适配
 
-状态：planned
+状态：implemented_locally_pending_review
 
 权威设计：[`2026-08-12-t-013-real-agent-and-chinese-localization-design.md`](../superpowers/specs/2026-08-12-t-013-real-agent-and-chinese-localization-design.md)。
 

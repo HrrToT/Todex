@@ -146,7 +146,13 @@ export class DesktopRunService {
     const runner = new AgentRunner({
       llm: createProtocolRepairingLlm(this.completionClientFactory(credential)),
       dispatcher,
-      governance: new Guardrail({ pathResolver: workspaceFs, approvalStore, clock, approvalIdFactory: this.idFactory }),
+      governance: new Guardrail({
+        pathResolver: workspaceFs,
+        approvalStore,
+        clock,
+        approvalIdFactory: this.idFactory,
+        requireApprovalForConfiguredCommands: true,
+      }),
       approvalStore,
       clock,
       traceStore,

@@ -34,6 +34,66 @@ describe("Codex-style workbench", () => {
     Object.defineProperty(window, "todex", { configurable: true, value: undefined });
   });
 
+  it("imports a workspace, saves a credential, starts a run, and decides the current approval", async () => {
+    const user = userEvent.setup();
+    const savedModels: Array<{ configId: string; baseUrl: string; model: string }> = [];
+    const calls: { start: unknown[]; approval: unknown[]; credential: string[] } = { start: [], approval: [], credential: [] };
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        project: {
+          importSelectedWorkspace: async () => ({ projectId: "p-live", displayName: "node-fixture" }),
+          list: async () => [{ projectId: "p-live", displayName: "node-fixture" }],
+        },
+        model: {
+          list: async () => savedModels,
+          save: async (input: { baseUrl: string; model: string }) => {
+            const saved = { configId: "m-live", baseUrl: input.baseUrl, model: input.model };
+            savedModels.splice(0, savedModels.length, saved);
+            return saved;
+          },
+        },
+        credential: {
+          status: async () => ({ configured: true, availability: "available" }),
+          save: async (_configId: string, apiKey: string) => { calls.credential.push(apiKey); return { configured: true }; },
+        },
+        run: {
+          start: async (input: unknown) => {
+            calls.start.push(input);
+            return { run: { runId: "run-live", status: "awaiting_approval" }, trace: [{ eventId: "e1", type: "approval_requested", payloadSummary: "configured_command" }], pendingApproval: { approvalId: "approval-live" } };
+          },
+          snapshot: async () => undefined,
+          cancel: async () => undefined,
+        },
+        approval: {
+          decide: async (input: unknown) => {
+            calls.approval.push(input);
+            return { run: { runId: "run-live", status: "completed" }, trace: [] };
+          },
+        },
+      },
+    });
+
+    render(<WorkbenchApp locale="en-US" />);
+    await user.click(screen.getByRole("button", { name: /选择工作区/ }));
+    await user.type(screen.getByPlaceholderText("https://api.example.com/v1"), "https://example.invalid/v1");
+    await user.type(screen.getByPlaceholderText("model-name"), "mock-model");
+    await user.type(screen.getByPlaceholderText("仅保存到 Credential Manager"), "secret-value");
+    await user.click(screen.getByRole("button", { name: /保存模型配置/ }));
+
+    await user.type(screen.getByRole("textbox", { name: "Task or continuation" }), "Repair the fixture");
+    await user.click(screen.getByRole("button", { name: "Run" }));
+
+    expect(calls.credential).toEqual(["secret-value"]);
+    expect(calls.start).toEqual([{ projectId: "p-live", modelConfigId: "m-live", task: "Repair the fixture" }]);
+    expect(screen.getByText("approval_requested")).toBeVisible();
+    expect(screen.queryByDisplayValue("secret-value")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Allow once" }));
+    expect(calls.approval).toEqual([{ runId: "run-live", approvalId: "approval-live", decision: "once" }]);
+    Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+  });
+
   it("renders a workspace rail, collapsed Inspector, bottom composer, and idle state", () => {
     render(<WorkbenchApp />);
 
