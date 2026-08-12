@@ -7,6 +7,9 @@ files:
   - dist/**
   - package.json
 asar: true
+publish:
+  provider: generic
+  url: https://github.com/HrrToT/Todex/releases/download/v${version}
 win:
   target:
     - target: nsis

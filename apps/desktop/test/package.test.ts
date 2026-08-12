@@ -32,4 +32,12 @@ describe("desktop package scripts", () => {
     expect(manifest.scripts["package:win"]).toContain("electron-builder");
     expect(manifest.devDependencies["electron-builder"]).toBeDefined();
   });
+
+  it("configures release metadata for the GitHub-hosted Windows installer", () => {
+    const config = readFileSync(new URL("../electron-builder.yml", import.meta.url), "utf8");
+
+    expect(config).toContain("publish:");
+    expect(config).toContain("provider: generic");
+    expect(config).toContain("url: https://github.com/HrrToT/Todex/releases/download/v${version}");
+  });
 });
