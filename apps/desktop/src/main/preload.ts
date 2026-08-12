@@ -3,8 +3,10 @@ import { contextBridge, ipcRenderer } from "electron";
 const invoke = (channel: string, input: unknown) => ipcRenderer.invoke(channel, input);
 
 contextBridge.exposeInMainWorld("todex", {
+  workspace: {
+    choose: () => invoke("workspace.choose", {}),
+  },
   project: {
-    selectWorkspace: (input: unknown) => invoke("project.selectWorkspace", input),
     list: () => invoke("project.list", {}),
     get: (projectId: string) => invoke("project.get", { projectId }),
     save: (input: unknown) => invoke("project.save", input),

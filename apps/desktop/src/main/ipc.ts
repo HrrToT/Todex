@@ -1,16 +1,15 @@
-import { randomUUID } from "node:crypto";
-
 import { configuredCommandSchema, memoryEntrySchema, type ApprovalScope } from "@todex/contracts";
 import { z } from "zod";
 
 import type { WorkspaceHost } from "./workspace-host.js";
+import type { WorkspaceSelector } from "./workspace-selector.js";
 
 export interface IpcMainLike {
   handle(channel: string, listener: (event: unknown, input: unknown) => unknown): void;
 }
 
 export const TODexIpcChannels = [
-  "project.selectWorkspace",
+  "workspace.choose",
   "project.list",
   "project.get",
   "project.save",
@@ -43,12 +42,6 @@ const projectSchema = z
     updatedAt: z.string().min(1),
   })
   .strict();
-const workspaceSelectionSchema = z
-  .object({
-    workspaceRoot: z.string().min(1),
-    displayName: z.string().min(1).optional(),
-  })
-  .strict();
 const commandIdSchema = z.object({ commandId: z.string().min(1) }).strict();
 const runIdSchema = z.object({ runId: z.string().min(1) }).strict();
 const approvalDecisionSchema = z
@@ -63,18 +56,12 @@ const credentialSaveSchema = z
   .object({ configId: z.string().min(1), apiKey: z.string().min(1) })
   .strict();
 
-export function registerTodexIpc(ipcMain: IpcMainLike, host: WorkspaceHost): void {
-  register(ipcMain, "project.selectWorkspace", workspaceSelectionSchema, (input) => {
-    const timestamp = new Date().toISOString();
-    return host.store.saveProject({
-      projectId: randomUUID(),
-      workspaceRoot: input.workspaceRoot,
-      displayName: input.displayName ?? input.workspaceRoot,
-      profileJson: "{}",
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-  });
+export function registerTodexIpc(
+  ipcMain: IpcMainLike,
+  host: WorkspaceHost,
+  workspaceSelector?: Pick<WorkspaceSelector, "choose">,
+): void {
+  register(ipcMain, "workspace.choose", emptySchema, () => workspaceSelector?.choose());
   register(ipcMain, "project.list", emptySchema, () => host.store.listProjects());
   register(ipcMain, "project.get", projectIdSchema, (input) => host.store.getProject(input.projectId));
   register(ipcMain, "project.save", projectSchema, (input) => host.store.saveProject(input));

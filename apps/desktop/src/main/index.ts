@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { KeytarCredentialAdapter } from "./credential-store.js";
 import { registerTodexIpc } from "./ipc.js";
+import { WorkspaceSelector } from "./workspace-selector.js";
 import { WorkspaceHost } from "./workspace-host.js";
 
 export const DESKTOP_HOST_VERSION = "0.1.1";
@@ -45,7 +46,14 @@ export async function startDesktopHost(): Promise<void> {
     userDataPath: electron.app.getPath("userData"),
     credentialAdapter: new KeytarCredentialAdapter(),
   });
-  registerTodexIpc(electron.ipcMain, host);
+  registerTodexIpc(
+    electron.ipcMain,
+    host,
+    new WorkspaceSelector({
+      showOpenDialog: (options) => electron.dialog.showOpenDialog(options),
+      realpath: (path) => import("node:fs/promises").then(({ realpath }) => realpath(path)),
+    }),
+  );
   createDesktopWindow(electron.BrowserWindow as unknown as BrowserWindowConstructor);
 }
 

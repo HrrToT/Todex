@@ -28,7 +28,7 @@ class FakeBrowserWindow {
 }
 
 const EXPECTED_CHANNELS = [
-  "project.selectWorkspace",
+  "workspace.choose",
   "project.list",
   "project.get",
   "project.save",
@@ -60,6 +60,18 @@ describe("desktop IPC", () => {
     expect(ipcMain.handlers.has("credential.read")).toBe(false);
     expect(ipcMain.handlers.has("sql.execute")).toBe(false);
     expect(ipcMain.handlers.has("filesystem.read")).toBe(false);
+    expect(ipcMain.handlers.has("project.selectWorkspace")).toBe(false);
+  });
+
+  it("exposes workspace selection but no renderer-supplied filesystem operation", () => {
+    const ipcMain = new FakeIpcMain();
+    const selector = { choose: vi.fn().mockResolvedValue({ workspaceRoot: "C:\\fixtures\\node", displayName: "node" }) };
+
+    registerTodexIpc(ipcMain, {} as never, selector);
+
+    expect(ipcMain.handlers.has("workspace.choose")).toBe(true);
+    expect(ipcMain.handlers.has("filesystem.read")).toBe(false);
+    expect(ipcMain.handlers.has("filesystem.write")).toBe(false);
   });
 
   it("rejects invalid channel input with a stable redacted error", async () => {
