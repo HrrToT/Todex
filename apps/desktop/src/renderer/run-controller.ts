@@ -28,6 +28,66 @@ function idleEvents(locale: Locale): readonly StreamEvent[] {
   return [{ id: "idle", kind: "agent", title: t(locale, "demo.readyForTask"), detail: t(locale, "demo.streamWillAppear") }];
 }
 
+export interface LiveRunBridge {
+  start(input: { projectId: string; task: string; modelConfigId: string; verificationCommandId?: string }): Promise<unknown>;
+  snapshot(runId: string): Promise<unknown>;
+  cancel(runId: string): Promise<unknown>;
+}
+
+export class LiveRunController {
+  private currentSnapshot: WorkbenchSnapshot = {
+    phase: "idle",
+    task: "",
+    events: [],
+    inspectorTab: null,
+  };
+  private runId: string | undefined;
+
+  constructor(private readonly bridge: LiveRunBridge, private readonly locale: Locale = "zh-CN") {}
+
+  current(): WorkbenchSnapshot { return this.currentSnapshot; }
+
+  async start(task: string, input: { projectId: string; modelConfigId: string; verificationCommandId?: string }): Promise<WorkbenchSnapshot> {
+    const result = await this.bridge.start({ ...input, task });
+    this.currentSnapshot = this.fromResult(result, task);
+    this.runId = this.readRunId(result);
+    return this.currentSnapshot;
+  }
+
+  async decide(): Promise<WorkbenchSnapshot> {
+    if (!this.runId) return this.currentSnapshot;
+    const result = await this.bridge.snapshot(this.runId);
+    this.currentSnapshot = this.fromResult(result, this.currentSnapshot.task);
+    return this.currentSnapshot;
+  }
+
+  async cancel(): Promise<void> {
+    if (this.runId) await this.bridge.cancel(this.runId);
+  }
+
+  private fromResult(raw: unknown, task: string): WorkbenchSnapshot {
+    const result = raw as { status?: string; pendingApproval?: { approvalId: string }; trace?: Array<{ eventId: string; type: string; payloadSummary: string }> };
+    const phase: RunPhase = result.status === "awaiting_approval" ? "awaiting_approval" : result.status === "completed" || result.status === "completed_unverified" ? "completed" : result.status?.startsWith("failed") || result.status === "cancelled" ? "failed" : "running";
+    const events = (result.trace ?? []).map((event) => ({
+      id: event.eventId,
+      kind: traceKind(event.type),
+      title: event.type,
+      detail: event.payloadSummary,
+    }));
+    return { phase, task, events, inspectorTab: phase === "awaiting_approval" ? "approval" : "trace", approvalId: result.pendingApproval?.approvalId };
+  }
+
+  private readRunId(raw: unknown): string | undefined { return (raw as { run?: { runId?: string } }).run?.runId; }
+}
+
+function traceKind(type: string): StreamEvent["kind"] {
+  if (type === "tool_completed") return "tool";
+  if (type === "verification_completed") return "verification";
+  if (type === "action_requested" || type === "action_rejected") return "agent";
+  if (type === "run_completed" || type === "run_failed" || type === "run_cancelled") return "outcome";
+  return "agent";
+}
+
 function visibleTask(task: string, locale: Locale): string {
   return /(?:api[_-]?key|token|credentialref)\s*=/i.test(task)
     ? t(locale, "demo.withheldTask")

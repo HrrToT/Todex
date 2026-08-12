@@ -30,10 +30,13 @@ class FakeBrowserWindow {
 
 const EXPECTED_CHANNELS = [
   "workspace.choose",
+  "project.importSelectedWorkspace",
   "project.list",
   "project.get",
   "project.save",
   "project.delete",
+  "model.list",
+  "model.save",
   "command.list",
   "command.confirm",
   "command.remove",

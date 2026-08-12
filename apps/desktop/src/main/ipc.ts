@@ -1,6 +1,12 @@
 import { configuredCommandSchema, memoryEntrySchema, type ApprovalScope } from "@todex/contracts";
 import { z } from "zod";
 
+import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { ProjectDetector } from "@todex/harness-core";
+
 import type { WorkspaceHost } from "./workspace-host.js";
 import type { WorkspaceSelector } from "./workspace-selector.js";
 import type { DesktopRunService } from "./desktop-run-service.js";
@@ -11,10 +17,13 @@ export interface IpcMainLike {
 
 export const TODexIpcChannels = [
   "workspace.choose",
+  "project.importSelectedWorkspace",
   "project.list",
   "project.get",
   "project.save",
   "project.delete",
+  "model.list",
+  "model.save",
   "command.list",
   "command.confirm",
   "command.remove",
@@ -46,6 +55,7 @@ const projectSchema = z
   })
   .strict();
 const commandIdSchema = z.object({ commandId: z.string().min(1) }).strict();
+const modelConfigSchema = z.object({ configId: z.string().min(1).optional(), projectId: z.string().min(1), baseUrl: z.string().url(), model: z.string().min(1) }).strict();
 const runIdSchema = z.object({ runId: z.string().min(1) }).strict();
 const runStartSchema = z.object({
   projectId: z.string().min(1),
@@ -67,10 +77,27 @@ export function registerTodexIpc(
   runService?: DesktopRunService,
 ): void {
   register(ipcMain, "workspace.choose", emptySchema, () => workspaceSelector?.choose());
+  register(ipcMain, "project.importSelectedWorkspace", emptySchema, async () => {
+    const selected = await workspaceSelector?.choose();
+    if (!selected) return undefined;
+    const projectId = randomUUID();
+    const profile = new ProjectDetector({
+      readText(relativePath) {
+        try { return readFileSync(join(selected.workspaceRoot, relativePath), "utf8"); } catch { return undefined; }
+      },
+    }).detect();
+    const now = new Date().toISOString();
+    return host.store.saveProject({ projectId, workspaceRoot: selected.workspaceRoot, displayName: selected.displayName, profileJson: JSON.stringify(profile), createdAt: now, updatedAt: now });
+  });
   register(ipcMain, "project.list", emptySchema, () => host.store.listProjects());
   register(ipcMain, "project.get", projectIdSchema, (input) => host.store.getProject(input.projectId));
   register(ipcMain, "project.save", projectSchema, (input) => host.store.saveProject(input));
   register(ipcMain, "project.delete", projectIdSchema, (input) => host.store.deleteProject(input.projectId));
+  register(ipcMain, "model.list", projectIdSchema, (input) => host.store.listModelConfigs(input.projectId));
+  register(ipcMain, "model.save", modelConfigSchema, (input) => {
+    const now = new Date().toISOString();
+    return host.store.saveModelConfig({ configId: input.configId ?? randomUUID(), projectId: input.projectId, baseUrl: input.baseUrl, model: input.model, parametersJson: "{}", createdAt: now, updatedAt: now });
+  });
 
   register(ipcMain, "command.list", projectIdSchema, (input) => host.store.listCommands(input.projectId));
   register(ipcMain, "command.confirm", configuredCommandSchema, (input) =>
