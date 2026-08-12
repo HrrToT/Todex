@@ -1,6 +1,6 @@
 # T-012: 打包、CI、发布文档与端到端验收
 
-状态：complete
+状态：发布完成；已安装窗口的人工可视确认待补
 
 ## 范围
 
@@ -22,7 +22,7 @@
 - Render Demo 已上线：`https://todex-mock-demo.onrender.com`；三个固定场景均完成验收。
 - 本机安装后的 Electron 生命周期与 BrowserWindow 交互没有在本次发布后重新验收；T-009 的 `0xC0000005` 环境限制仍单独保留。
 
-## v0.1.1 Renderer 补丁（待发布）
+## v0.1.1 Renderer 补丁（已发布，待人工可视确认）
 
 - `v0.1.0` 的已安装窗口被实机发现为白屏：主进程实际加载了
   `data:text/html,<main></main>`，没有加载已打包的 React Renderer。
@@ -34,6 +34,14 @@
   显示工作台，不再白屏。
 - 本机完整 Vitest 仍受 `better-sqlite3` Electron ABI 135 与 Node 24 ABI 137
   不匹配影响；发布前以 GitHub Windows Node 20 CI 作为完整回归门槛。
+- `v0.1.1` 已发布至 https://github.com/HrrToT/Todex/releases/tag/v0.1.1，tag
+  指向 `5d916956bd434b437a9f7a763b5899d052906280`。正式下载的安装器为
+  `Todex-0.1.1-win-x64.exe`，大小 98,874,846 bytes，SHA-256 为
+  `ff6f926a6e0ca515e4ee6e269c3f5f0adffd31e89f4c336388a1908b6d191ea0`。
+- 2026-08-12 已核对下载包 SHA-256、`latest.yml` SHA-512 与文件大小，并完成
+  `C:\Program Files\Todex` 的安装替换；已安装 `app.asar` 不再含旧版
+  `data:text/html,<main></main>`。这不是“已确认工作台可见”的替代证据，人工
+  可视确认仍待收集。
 
 ## 允许修改
 
