@@ -688,7 +688,7 @@ Expected: FAIL because no artifact or configured Demo URL exists.
 
 Configure electron-builder for unsigned NSIS x64 output. CI must run `pnpm lint`, `pnpm test --run`, `pnpm typecheck`, and `pnpm build` on push; release workflow must upload the installer artifact. Add `verify:release` that checks artifact metadata and an HTTPS Demo URL. Update README only with commands actually executed, Credential Manager steps, SmartScreen disclosure, Render URL, limitations and directory structure.
 
-- [ ] **Step 4: Verify end-to-end evidence**
+- [x] **Step 4: Verify end-to-end evidence**
 
 Run: `pnpm test --run`
 Expected: PASS.
@@ -703,9 +703,16 @@ Expected: all required mechanism booleans true.
 Run: `pnpm verify:release`
 Expected: PASS after Windows artifact and Demo deployment are available.
 
-- [ ] **Step 5: Complete course evidence and commit**
-
+- [x] **Step 5: Complete course evidence and commit**
 Record cold-start observations, revision diffs, CI links, installer verification and Demo URL in `docs/verification/`. Update each completed task in this PLAN with PR/commit/test evidence. Run final specification and code review, then commit with `git commit -m "release: prepare Todex v1.0"`.
+Completion update (2026-08-12): PRs #11 through #15 are merged. `v0.1.0` and
+`edd996b78520b06ca6f6c9ee7f03d828efacaa08` are published at
+https://github.com/HrrToT/Todex/releases/tag/v0.1.0. The successful Windows
+release workflow is https://github.com/HrrToT/Todex/actions/runs/31562649008;
+it produced `Todex-0.1.0-win-x64.exe` and `latest.yml`. The fixed-scenario
+Render Demo is live at https://todex-mock-demo.onrender.com. See
+`docs/verification/2026-08-07-t-012-release-verification.md` for the retained
+local Electron lifecycle verification boundary.
 
 ## Plan Self-Review
 

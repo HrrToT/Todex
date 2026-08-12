@@ -1,6 +1,6 @@
 # T-012: 打包、CI、发布文档与端到端验收
 
-状态：implemented with external verification pending
+状态：complete
 
 ## 范围
 
@@ -14,11 +14,13 @@
 - README 只记录实际运行过的命令、Credential Manager 边界、unsigned/SmartScreen 提示、Demo URL 状态、限制和目录结构。
 - 发布/端到端缺失证据必须明确记录为未完成，不能用本地 build 替代真实安装或公网部署。
 
-## 当前证据
+## 最终证据
 
 - `scripts/test/verify-release.test.ts`：先红后绿，4/4 通过。
-- `pnpm.cmd typecheck`、`pnpm.cmd lint`、`pnpm.cmd build`：通过。
-- 当前 `pnpm.cmd verify:release`：按预期失败，尚无 Windows installer artifact 和公网 Demo URL。
+- GitHub Release workflow `31562649008` 在 `windows-2022` 完成 install、lint、test、typecheck、build、`package:win` 和 `verify:release`。
+- `v0.1.0` / `edd996b78520b06ca6f6c9ee7f03d828efacaa08` 已发布，资产为 `Todex-0.1.0-win-x64.exe` 与 `latest.yml`。
+- Render Demo 已上线：`https://todex-mock-demo.onrender.com`；三个固定场景均完成验收。
+- 本机安装后的 Electron 生命周期与 BrowserWindow 交互没有在本次发布后重新验收；T-009 的 `0xC0000005` 环境限制仍单独保留。
 
 ## 允许修改
 
