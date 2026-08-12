@@ -98,6 +98,20 @@ export class WorkspaceHost {
     return result;
   }
 
+  async readLlmConfiguration(configId: string): Promise<{
+    readonly baseUrl: string;
+    readonly model: string;
+    readonly apiKey: string;
+  }> {
+    await this.reconcilePendingCredentialClear(configId);
+    const config = this.requireModelConfig(configId);
+    return {
+      baseUrl: config.baseUrl,
+      model: config.model,
+      apiKey: await this.credentials.readForMainProcess(config.credentialRef),
+    };
+  }
+
   private async reconcilePendingCredentialClear(configId: string): Promise<void> {
     const pending = this.store.getPendingCredentialClear(configId);
     if (!pending) {

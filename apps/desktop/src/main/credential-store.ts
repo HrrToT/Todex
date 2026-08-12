@@ -79,4 +79,22 @@ export class CredentialStore {
     }
     return { configured: false };
   }
+
+  async readForMainProcess(credentialRef: string | undefined): Promise<string> {
+    if (!credentialRef) {
+      throw new Error("credential_not_configured");
+    }
+    try {
+      const apiKey = await this.options.adapter.read(credentialRef);
+      if (!apiKey) {
+        throw new Error("credential_not_configured");
+      }
+      return apiKey;
+    } catch (error) {
+      if (error instanceof Error && error.message === "credential_not_configured") {
+        throw error;
+      }
+      throw new Error("credential_unavailable");
+    }
+  }
 }
