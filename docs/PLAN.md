@@ -746,6 +746,15 @@ interactive visual acceptance.
 
 ### Placeholder scan
 
+### T-013 Local implementation checkpoint (2026-08-12)
+
+- [x] Chinese-first Desktop and Mock Demo copy with retained English mode.
+- [x] Main-process workspace selection, project import/detection, OpenAI Chat Completions client, bounded filesystem/command adapters, and high-level governed Run IPC.
+- [x] Every desktop `run_configured_command` requires an explicit approval decision before dispatch; normal read/search/safe patch remain governed automatic actions.
+- [x] Focused desktop E2E proves safe patch -> zero command dispatch before approval -> approved fixed argv -> finish, with a credential sentinel absent from projections and traces.
+- [ ] Independent specification/security review, GitHub CI, and Windows installed-app manual acceptance remain required before release.
+- [ ] Local complete Vitest evidence remains blocked by missing `better-sqlite3` Node ABI 137 binding under Node 24.14.0; do not suppress the existing SQLite/WorkspaceHost tests.
+
 ????????????????????????????????????????????????????????????????
 
 ### Type consistency
