@@ -714,13 +714,20 @@ Render Demo is live at https://todex-mock-demo.onrender.com. See
 `docs/verification/2026-08-07-t-012-release-verification.md` for the retained
 local Electron lifecycle verification boundary.
 
-Patch update (2026-08-12): an installed `v0.1.0` window exposed a Renderer
-white screen. The root cause was the main process loading a literal empty
-`data:` document rather than the built React entry. The pending `v0.1.1`
-repair loads `dist/renderer/index.html` via `file:` and uses a relative Vite
-asset base. Its regression test was observed red then green; the unpacked
-Windows build was visually confirmed to render. Publication remains gated on
-the patch PR's clean GitHub Windows CI and a new tag release.
+Patch publication update (2026-08-12): an installed `v0.1.0` window exposed a
+Renderer white screen. The root cause was the main process loading a literal
+empty `data:` document rather than the built React entry. `v0.1.1` loads
+`dist/renderer/index.html` via `file:` and uses a relative Vite asset base.
+Its regression test was observed red then green; the unpacked Windows build
+was visually confirmed to render. PR #17 merged as
+`5d916956bd434b437a9f7a763b5899d052906280`; `v0.1.1` is published at
+https://github.com/HrrToT/Todex/releases/tag/v0.1.1 and its Windows workflow
+is https://github.com/HrrToT/Todex/actions/runs/31570728577. The official
+installer was downloaded, matched its GitHub SHA-256 and `latest.yml` SHA-512,
+and was installed to `C:\Program Files\Todex`; the installed package no longer
+contains the old empty `data:` URL. A human confirmation that the installed
+window visibly renders the workbench is still required before claiming final
+interactive visual acceptance.
 
 ## Plan Self-Review
 

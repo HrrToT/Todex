@@ -46,7 +46,7 @@ BrowserWindow interaction test. The pre-existing T-009 environment issue
 The successful hosted GitHub Windows workflow is the release-build evidence;
 it is not evidence that the local native-module lifecycle limitation disappeared.
 
-## v0.1.1 Renderer white-screen repair (pending publication)
+## v0.1.1 Renderer white-screen repair and publication
 
 The installed `v0.1.0` window was observed as a white page. Root-cause
 inspection found that `createDesktopWindow()` loaded the literal empty page
@@ -61,8 +61,32 @@ references suitable for that `file:` document. Focused desktop tests passed
 The local `0.1.1` NSIS package passed `verify:release` against the HTTPS Demo
 URL. The non-installed `release/win-unpacked/Todex.exe` was launched with a
 temporary user-data directory; the user confirmed the workbench rendered
-instead of a white page. This is not yet GitHub Release evidence: publication
-waits for the patch PR and its clean Windows Node 20 CI run.
+instead of a white page.
+
+Publication is now complete. GitHub Release `v0.1.1` points to
+`5d916956bd434b437a9f7a763b5899d052906280` and publishes
+`Todex-0.1.1-win-x64.exe` (98,874,846 bytes) plus `latest.yml`:
+
+- Release: https://github.com/HrrToT/Todex/releases/tag/v0.1.1
+- Workflow: https://github.com/HrrToT/Todex/actions/runs/31570728577
+- Installer SHA-256: `ff6f926a6e0ca515e4ee6e269c3f5f0adffd31e89f4c336388a1908b6d191ea0`
+- `latest.yml` SHA-512:
+  `uLTl7wR4Lh6iVJTbCBh2AFoKVU5fCPEJe/O1TVSWWLrL+ABCwBnps6/6FRJFTfznDYmzEjI2tifBd2dvwraXkg==`
+
+On 2026-08-12, the installer downloaded from that Release was checked against
+both values and installed to `C:\Program Files\Todex`. The downloaded file
+size was 98,874,846 bytes; the installed executable and `app.asar` received
+the new installation timestamp, and the installed `app.asar` no longer
+contained `data:text/html,<main></main>`. This proves delivery of the fixed
+package, not a complete interactive product workflow.
+
+### Remaining manual visual boundary
+
+The installed process was started after upgrade, but this evidence set has no
+captured human confirmation of the installed window's visible workbench
+content. Do not claim that final visual assertion yet. Also, the current
+desktop UI is a deterministic workbench prototype, not a GUI integration that
+can use a real LLM against an arbitrary local repository.
 
 The local root suite had 440 passing tests and 17 failures caused only by a
 known native ABI mismatch: the locally rebuilt `better-sqlite3` uses Electron
