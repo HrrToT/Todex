@@ -57,4 +57,13 @@ describe("NodeWorkspaceFs", () => {
     await expect(fs.readText("safe.ts")).rejects.toThrow();
     await expect(fs.commit(new Map([[".env", "leak"]]))).rejects.toThrow("sensitive_path");
   });
+
+  it("canonically validates a new patch target without requiring the file to exist", () => {
+    const workspaceRoot = createWorkspace();
+    const fs = new NodeWorkspaceFs({ workspaceRoot });
+
+    expect(fs.resolveCanonical(workspaceRoot, "src/new-file.ts")).toMatch(/src[\\/]new-file\.ts$/);
+    expect(() => fs.resolveCanonical(workspaceRoot, "../outside.ts")).toThrow("workspace_escape");
+    expect(() => fs.resolveCanonical(workspaceRoot, ".env")).toThrow("sensitive_path");
+  });
 });

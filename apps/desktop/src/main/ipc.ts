@@ -20,7 +20,6 @@ export const TODexIpcChannels = [
   "project.importSelectedWorkspace",
   "project.list",
   "project.get",
-  "project.save",
   "project.delete",
   "model.list",
   "model.save",
@@ -44,16 +43,6 @@ export const TODexIpcChannels = [
 
 const emptySchema = z.object({}).strict();
 const projectIdSchema = z.object({ projectId: z.string().min(1) }).strict();
-const projectSchema = z
-  .object({
-    projectId: z.string().min(1),
-    workspaceRoot: z.string().min(1),
-    displayName: z.string().min(1),
-    profileJson: z.string(),
-    createdAt: z.string().min(1),
-    updatedAt: z.string().min(1),
-  })
-  .strict();
 const commandIdSchema = z.object({ commandId: z.string().min(1) }).strict();
 const modelConfigSchema = z.object({ configId: z.string().min(1).optional(), projectId: z.string().min(1), baseUrl: z.string().url(), model: z.string().min(1) }).strict();
 const runIdSchema = z.object({ runId: z.string().min(1) }).strict();
@@ -91,7 +80,6 @@ export function registerTodexIpc(
   });
   register(ipcMain, "project.list", emptySchema, () => host.store.listProjects());
   register(ipcMain, "project.get", projectIdSchema, (input) => host.store.getProject(input.projectId));
-  register(ipcMain, "project.save", projectSchema, (input) => host.store.saveProject(input));
   register(ipcMain, "project.delete", projectIdSchema, (input) => host.store.deleteProject(input.projectId));
   register(ipcMain, "model.list", projectIdSchema, (input) => host.store.listModelConfigs(input.projectId));
   register(ipcMain, "model.save", modelConfigSchema, (input) => {

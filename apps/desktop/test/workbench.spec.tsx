@@ -13,6 +13,27 @@ describe("Codex-style workbench", () => {
     expect(preloadApprovalBridge()).toBe(approval);
   });
 
+  it("uses the Electron-only live workbench for governed workspace and model setup", () => {
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [] },
+        model: { list: async () => [], save: async () => ({ configId: "m1", baseUrl: "https://example.invalid/v1", model: "test-model" }) },
+        credential: { status: async () => ({ configured: false, availability: "available" }), save: async () => ({ configured: true }) },
+      },
+    });
+
+    render(<WorkbenchApp locale="en-US" />);
+
+    expect(screen.getByText("Base URL")).toBeVisible();
+    expect(screen.getByPlaceholderText("https://api.example.com/v1")).toBeVisible();
+    expect(screen.getByPlaceholderText("model-name")).toBeVisible();
+    expect(screen.getByPlaceholderText("仅保存到 Credential Manager")).toBeVisible();
+    expect(screen.queryByText("Ready for a task")).not.toBeInTheDocument();
+    Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+  });
+
   it("renders a workspace rail, collapsed Inspector, bottom composer, and idle state", () => {
     render(<WorkbenchApp />);
 

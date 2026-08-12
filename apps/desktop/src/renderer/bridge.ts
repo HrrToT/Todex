@@ -2,7 +2,7 @@ import type { ApprovalDecision } from "./run-controller.js";
 import type { LiveRunBridge } from "./run-controller.js";
 
 export interface ApprovalBridge {
-  decide(input: { approvalId: string; decision: ApprovalDecision }): Promise<unknown>;
+  decide(input: { approvalId: string; decision: ApprovalDecision; runId?: string }): Promise<unknown>;
 }
 
 export interface WorkspaceSelectionBridge {
@@ -17,10 +17,17 @@ export interface TodexPreloadSurface {
     snapshot(runId: string): Promise<unknown>;
     cancel(runId: string): Promise<unknown>;
   };
-  project?: { importSelectedWorkspace(): Promise<{ projectId: string; displayName: string } | undefined> };
+  project?: {
+    importSelectedWorkspace(): Promise<{ projectId: string; displayName: string } | undefined>;
+    list(): Promise<readonly { projectId: string; displayName: string }[]>;
+  };
   model?: {
     list(projectId: string): Promise<readonly { configId: string; baseUrl: string; model: string }[]>;
     save(input: { projectId: string; baseUrl: string; model: string }): Promise<{ configId: string; baseUrl: string; model: string }>;
+  };
+  credential?: {
+    status(configId: string): Promise<{ configured: boolean; availability: "available" | "unavailable" }>;
+    save(configId: string, apiKey: string): Promise<{ configured: true }>;
   };
 }
 

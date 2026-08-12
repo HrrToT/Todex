@@ -13,7 +13,7 @@ import {
   TerminalSquare,
   X,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   DemoRunController,
@@ -22,7 +22,7 @@ import {
   type StreamEvent,
   type WorkbenchSnapshot,
 } from "./run-controller.js";
-import type { ApprovalBridge } from "./bridge.js";
+import { preloadRunBridge, type ApprovalBridge } from "./bridge.js";
 import { t, type Locale } from "./i18n.js";
 import "./styles.css";
 
@@ -62,6 +62,12 @@ export interface WorkbenchAppProps {
 }
 
 export function WorkbenchApp({ approvalBridge, onApprovalDecision, locale = "zh-CN" }: WorkbenchAppProps): JSX.Element {
+  return preloadRunBridge()
+    ? <LiveWorkbenchApp locale={locale} />
+    : <DemoWorkbenchApp approvalBridge={approvalBridge} onApprovalDecision={onApprovalDecision} locale={locale} />;
+}
+
+function DemoWorkbenchApp({ approvalBridge, onApprovalDecision, locale = "zh-CN" }: WorkbenchAppProps): JSX.Element {
   const controllerRef = useRef<DemoRunController | null>(null);
   if (!controllerRef.current) controllerRef.current = new DemoRunController(locale);
   const controller = controllerRef.current;
@@ -177,4 +183,76 @@ function InspectorContent({ snapshot, tab, onDecision, locale }: { snapshot: Wor
   if (tab === "diff") return <section className="inspector-content"><p className="inspector-kicker">{t(locale, "workbench.patchSummary")}</p><h3>src/calculator.ts</h3><pre aria-label={t(locale, "workbench.patchSummary")}><code>- return left - right{`\n`}+ return left + right</code></pre></section>;
   if (tab === "memory") return <section className="inspector-content"><p className="inspector-kicker">{t(locale, "workbench.selectedMemory")}</p><h3>{t(locale, "workbench.noStoredContext")}</h3><p>{t(locale, "workbench.memorySafety")}</p></section>;
   return <section className="inspector-content"><p className="inspector-kicker">{t(locale, "workbench.traceTimeline")}</p><ol className="trace-list">{snapshot.events.map((event, index) => <li key={event.id}><span>{index + 1}</span><div><strong>{event.title}</strong><p>{event.detail}</p></div></li>)}</ol></section>;
+}
+
+interface DesktopProject { readonly projectId: string; readonly displayName: string; }
+interface DesktopModel { readonly configId: string; readonly baseUrl: string; readonly model: string; }
+interface LiveSnapshot { readonly run: { readonly runId: string; readonly status: string }; readonly trace: readonly { readonly eventId: string; readonly type: string; readonly payloadSummary: string }[]; readonly pendingApproval?: { readonly approvalId: string }; }
+
+function LiveWorkbenchApp({ locale }: { locale: Locale }): JSX.Element {
+  const surface = window.todex!;
+  const [projects, setProjects] = useState<readonly DesktopProject[]>([]);
+  const [project, setProject] = useState<DesktopProject>();
+  const [models, setModels] = useState<readonly DesktopModel[]>([]);
+  const [model, setModel] = useState<DesktopModel>();
+  const [baseUrl, setBaseUrl] = useState("");
+  const [modelName, setModelName] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [task, setTask] = useState("");
+  const [snapshot, setSnapshot] = useState<LiveSnapshot>();
+  const [notice, setNotice] = useState("请选择工作区并配置模型");
+
+  const chooseModel = useCallback(async (next: DesktopModel): Promise<void> => {
+    setModel(next); setBaseUrl(next.baseUrl); setModelName(next.model);
+    const status = await surface.credential?.status(next.configId);
+    setNotice(status?.configured ? "模型已配置，可以开始运行" : "请输入 API Key 后保存模型凭据");
+  }, [surface]);
+  const chooseProject = useCallback(async (next: DesktopProject): Promise<void> => {
+    setProject(next); setModel(undefined); setSnapshot(undefined);
+    const found = await surface.model?.list(next.projectId) ?? [];
+    setModels(found); if (found[0]) await chooseModel(found[0]);
+  }, [chooseModel, surface]);
+  const refreshProjects = useCallback(async (): Promise<void> => {
+    const next = await surface.project?.list() ?? [];
+    setProjects(next);
+    if (!project && next[0]) await chooseProject(next[0]);
+  }, [chooseProject, project, surface]);
+
+  useEffect(() => { void refreshProjects(); }, [refreshProjects]);
+  async function importWorkspace(): Promise<void> {
+    const imported = await surface.project?.importSelectedWorkspace();
+    if (!imported) return;
+    await refreshProjects();
+    await chooseProject(imported);
+  }
+  async function saveModel(): Promise<void> {
+    if (!project || !baseUrl || !modelName) return;
+    const saved = await surface.model?.save({ projectId: project.projectId, baseUrl, model: modelName });
+    if (!saved) return;
+    if (apiKey) await surface.credential?.save(saved.configId, apiKey);
+    setApiKey(""); await chooseModel(saved); await chooseProject(project);
+  }
+  async function start(): Promise<void> {
+    if (!project || !model || !task.trim()) { setNotice("请先选择工作区、模型并填写任务"); return; }
+    const result = await surface.run?.start({ projectId: project.projectId, modelConfigId: model.configId, task });
+    setSnapshot(result as LiveSnapshot); setNotice("运行状态已更新");
+  }
+  async function decide(decision: ApprovalDecision): Promise<void> {
+    if (!snapshot?.pendingApproval || !surface.approval) return;
+    const result = await surface.approval.decide({ runId: snapshot.run.runId, approvalId: snapshot.pendingApproval.approvalId, decision });
+    setSnapshot(result as LiveSnapshot);
+  }
+
+  return <main className="workbench-shell">
+    <aside className="workspace-rail" aria-label="工作区导航"><div className="brand-mark"><Command size={18} /><span>Todex</span></div>
+      <button className="project-switcher" type="button" onClick={() => void importWorkspace()}><FolderKanban size={16} /><span>{project?.displayName ?? "选择工作区"}</span><ChevronRight size={14} /></button>
+      <section className="rail-section"><p>模型配置</p><label>Base URL<input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.example.com/v1" /></label><label>模型<input value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="model-name" /></label><label>API Key<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="仅保存到 Credential Manager" /></label><button className="run-row selected" type="button" onClick={() => void saveModel()}>保存模型配置</button></section>
+      <nav className="rail-nav">{projects.map((item) => <button key={item.projectId} type="button" onClick={() => void chooseProject(item)}><FolderKanban size={16} /><span>{item.displayName}</span></button>)}{models.map((item) => <button key={item.configId} type="button" onClick={() => void chooseModel(item)}><Command size={16} /><span>{item.model}</span></button>)}</nav>
+    </aside>
+    <section className="execution-area"><header className="stream-header"><div><span className="eyebrow">{t(locale, "workbench.workspace")}</span><h1>{project?.displayName ?? "未选择工作区"}</h1></div><div className={`phase phase-${snapshot?.run.status === "awaiting_approval" ? "awaiting_approval" : snapshot ? "running" : "idle"}`}><span />{snapshot?.run.status ?? "idle"}</div></header>
+      <div className="stream-scroll"><div className="execution-stream"><p className="inspector-kicker">{notice}</p>{snapshot?.trace.map((event) => <div className="stream-event" key={event.eventId}><span className="event-icon">{eventIcon("agent")}</span><span className="event-content"><strong>{event.type}</strong><span>{event.payloadSummary}</span></span></div>)}</div></div>
+      {snapshot?.pendingApproval ? <section className="approval-actions"><button type="button" onClick={() => void decide("once")}>{t(locale, "workbench.allowOnce")}</button><button type="button" onClick={() => void decide("run")}>{t(locale, "workbench.allowRun")}</button><button className="danger" type="button" onClick={() => void decide("deny")}>{t(locale, "workbench.deny")}</button></section> : null}
+      <form className="task-composer" onSubmit={(event) => { event.preventDefault(); void start(); }}><label htmlFor="live-task">{t(locale, "workbench.task")}</label><textarea id="live-task" value={task} onChange={(event) => setTask(event.target.value)} rows={2} /><button className="send-button" type="submit" aria-label={t(locale, "workbench.run")}><Play size={15} /></button></form>
+    </section>
+  </main>;
 }

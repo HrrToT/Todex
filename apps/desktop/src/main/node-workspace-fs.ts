@@ -24,7 +24,7 @@ export class NodeWorkspaceFs implements WorkspaceFs, PathResolver {
     if (resolve(workspaceRoot) !== this.root) {
       throw new Error("workspace_root_mismatch");
     }
-    return this.resolveChecked(path);
+    return this.resolveChecked(path, true);
   }
 
   async list(path: string, maxDepth: number): Promise<readonly string[]> {

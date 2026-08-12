@@ -10,7 +10,6 @@ contextBridge.exposeInMainWorld("todex", {
     importSelectedWorkspace: () => invoke("project.importSelectedWorkspace", {}),
     list: () => invoke("project.list", {}),
     get: (projectId: string) => invoke("project.get", { projectId }),
-    save: (input: unknown) => invoke("project.save", input),
     delete: (projectId: string) => invoke("project.delete", { projectId }),
   },
   model: {

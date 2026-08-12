@@ -33,7 +33,6 @@ const EXPECTED_CHANNELS = [
   "project.importSelectedWorkspace",
   "project.list",
   "project.get",
-  "project.save",
   "project.delete",
   "model.list",
   "model.save",
@@ -67,6 +66,7 @@ describe("desktop IPC", () => {
     expect(ipcMain.handlers.has("sql.execute")).toBe(false);
     expect(ipcMain.handlers.has("filesystem.read")).toBe(false);
     expect(ipcMain.handlers.has("project.selectWorkspace")).toBe(false);
+    expect(ipcMain.handlers.has("project.save")).toBe(false);
   });
 
   it("exposes workspace selection but no renderer-supplied filesystem operation", () => {
