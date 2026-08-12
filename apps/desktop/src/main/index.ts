@@ -4,6 +4,7 @@ import { KeytarCredentialAdapter } from "./credential-store.js";
 import { registerTodexIpc } from "./ipc.js";
 import { WorkspaceSelector } from "./workspace-selector.js";
 import { WorkspaceHost } from "./workspace-host.js";
+import { DesktopRunService } from "./desktop-run-service.js";
 
 export const DESKTOP_HOST_VERSION = "0.1.1";
 
@@ -53,6 +54,7 @@ export async function startDesktopHost(): Promise<void> {
       showOpenDialog: (options) => electron.dialog.showOpenDialog(options),
       realpath: (path) => import("node:fs/promises").then(({ realpath }) => realpath(path)),
     }),
+    new DesktopRunService({ host }),
   );
   createDesktopWindow(electron.BrowserWindow as unknown as BrowserWindowConstructor);
 }

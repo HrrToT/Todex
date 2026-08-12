@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { WorkspaceHost } from "./workspace-host.js";
 import type { WorkspaceSelector } from "./workspace-selector.js";
+import type { DesktopRunService } from "./desktop-run-service.js";
 
 export interface IpcMainLike {
   handle(channel: string, listener: (event: unknown, input: unknown) => unknown): void;
@@ -18,7 +19,9 @@ export const TODexIpcChannels = [
   "command.confirm",
   "command.remove",
   "run.list",
+  "run.start",
   "run.get",
+  "run.snapshot",
   "run.cancel",
   "approval.listPending",
   "approval.decide",
@@ -44,12 +47,13 @@ const projectSchema = z
   .strict();
 const commandIdSchema = z.object({ commandId: z.string().min(1) }).strict();
 const runIdSchema = z.object({ runId: z.string().min(1) }).strict();
-const approvalDecisionSchema = z
-  .object({
-    approvalId: z.string().min(1),
-    decision: z.enum(["once", "run", "command_prefix", "deny"]),
-  })
-  .strict();
+const runStartSchema = z.object({
+  projectId: z.string().min(1),
+  task: z.string().min(1),
+  modelConfigId: z.string().min(1),
+  verificationCommandId: z.string().min(1).optional(),
+}).strict();
+const runApprovalSchema = z.object({ runId: z.string().min(1).optional(), approvalId: z.string().min(1), decision: z.enum(["once", "run", "command_prefix", "deny"]) }).strict();
 const memoryIdSchema = z.object({ memoryId: z.string().min(1) }).strict();
 const credentialConfigSchema = z.object({ configId: z.string().min(1) }).strict();
 const credentialSaveSchema = z
@@ -60,6 +64,7 @@ export function registerTodexIpc(
   ipcMain: IpcMainLike,
   host: WorkspaceHost,
   workspaceSelector?: Pick<WorkspaceSelector, "choose">,
+  runService?: DesktopRunService,
 ): void {
   register(ipcMain, "workspace.choose", emptySchema, () => workspaceSelector?.choose());
   register(ipcMain, "project.list", emptySchema, () => host.store.listProjects());
@@ -74,20 +79,29 @@ export function registerTodexIpc(
   register(ipcMain, "command.remove", commandIdSchema, (input) => host.store.removeCommand(input.commandId));
 
   register(ipcMain, "run.list", projectIdSchema, (input) => host.store.listRuns(input.projectId));
+  register(ipcMain, "run.start", runStartSchema, (input) => {
+    if (!runService) throw new Error("host_operation_failed");
+    return runService.start(input);
+  });
+  register(ipcMain, "run.snapshot", runIdSchema, (input) => {
+    if (!runService) throw new Error("host_operation_failed");
+    return runService.snapshot(input.runId);
+  });
   register(ipcMain, "run.get", runIdSchema, (input) => host.store.getRun(input.runId));
   register(ipcMain, "run.cancel", runIdSchema, (input) =>
-    host.store.updateRunStatus({
-      runId: input.runId,
-      status: "cancelled",
-      endedAt: new Date().toISOString(),
-      stopReason: "cancelled_by_user",
+    runService ? runService.cancel(input.runId) : host.store.updateRunStatus({
+      runId: input.runId, status: "cancelled", endedAt: new Date().toISOString(), stopReason: "cancelled_by_user",
     }),
   );
 
   register(ipcMain, "approval.listPending", projectIdSchema, (input) =>
     host.store.listPendingApprovals(input.projectId),
   );
-  register(ipcMain, "approval.decide", approvalDecisionSchema, (input) => {
+  register(ipcMain, "approval.decide", runApprovalSchema, (input) => {
+    if (runService) {
+      if (!input.runId) throw new Error("invalid_ipc_input");
+      return runService.decideApproval({ ...input, runId: input.runId });
+    }
     const approval = host.store
       .listPendingApprovals()
       .find((candidate) => candidate.approvalId === input.approvalId);

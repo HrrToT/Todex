@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TODexIpcChannels, registerTodexIpc } from "../src/main/ipc.js";
 import { createDesktopWindow } from "../src/main/index.js";
+import type { DesktopRunService } from "../src/main/desktop-run-service.js";
 
 type Handler = (event: unknown, input: unknown) => unknown;
 
@@ -37,7 +38,9 @@ const EXPECTED_CHANNELS = [
   "command.confirm",
   "command.remove",
   "run.list",
+  "run.start",
   "run.get",
+  "run.snapshot",
   "run.cancel",
   "approval.listPending",
   "approval.decide",
@@ -111,6 +114,26 @@ describe("desktop IPC", () => {
     expect(
       JSON.stringify(await ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "secret-value" })),
     ).not.toContain("secret-value");
+  });
+
+  it("exposes only high-level run intent to the main-process service", async () => {
+    const ipcMain = new FakeIpcMain();
+    const service = {
+      start: vi.fn().mockResolvedValue({ run: { runId: "run-1" }, trace: [], results: [] }),
+      snapshot: vi.fn().mockReturnValue(undefined),
+      cancel: vi.fn(),
+      decideApproval: vi.fn(),
+    } as unknown as DesktopRunService;
+    const host = { store: { listProjects: vi.fn(), getProject: vi.fn(), listCommands: vi.fn(), listRuns: vi.fn(), getRun: vi.fn(), listPendingApprovals: vi.fn(), listMemories: vi.fn() } };
+    registerTodexIpc(ipcMain, host as never, undefined, service);
+
+    await expect(
+      ipcMain.handlers.get("run.start")?.({}, { projectId: "p1", task: "修复测试", modelConfigId: "m1" }),
+    ).resolves.toMatchObject({ run: { runId: "run-1" } });
+    expect(service.start).toHaveBeenCalledWith({ projectId: "p1", task: "修复测试", modelConfigId: "m1" });
+    await expect(
+      ipcMain.handlers.get("run.start")?.({}, { projectId: "p1", task: "x", modelConfigId: "m1", workspaceRoot: "C:\\outside" }),
+    ).rejects.toThrow("invalid_ipc_input");
   });
 
   it("creates a sandboxed browser window that denies navigation and new windows", () => {

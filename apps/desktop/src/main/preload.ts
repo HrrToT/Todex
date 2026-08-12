@@ -18,8 +18,10 @@ contextBridge.exposeInMainWorld("todex", {
     remove: (commandId: string) => invoke("command.remove", { commandId }),
   },
   run: {
+    start: (input: unknown) => invoke("run.start", input),
     list: (projectId: string) => invoke("run.list", { projectId }),
     get: (runId: string) => invoke("run.get", { runId }),
+    snapshot: (runId: string) => invoke("run.snapshot", { runId }),
     cancel: (runId: string) => invoke("run.cancel", { runId }),
   },
   approval: {
