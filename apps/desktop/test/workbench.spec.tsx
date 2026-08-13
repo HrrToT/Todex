@@ -34,6 +34,30 @@ describe("Codex-style workbench", () => {
     Object.defineProperty(window, "todex", { configurable: true, value: undefined });
   });
 
+  it("switches the live workbench copy without changing the governed bridge", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [] },
+        model: { list: async () => [], save: async () => ({ configId: "m1", baseUrl: "https://example.invalid/v1", model: "test-model" }) },
+        credential: { status: async () => ({ configured: false, availability: "available" }), save: async () => ({ configured: true }) },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp />);
+      await user.click(screen.getByRole("button", { name: "English" }));
+
+      expect(screen.getByRole("button", { name: "Chinese" })).toBeVisible();
+      expect(screen.getByRole("textbox", { name: "Task or continuation" })).toBeVisible();
+      expect(window.todex?.run).toBeDefined();
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
   it("imports a workspace, saves a credential, starts a run, and decides the current approval", async () => {
     const user = userEvent.setup();
     const savedModels: Array<{ configId: string; baseUrl: string; model: string }> = [];
@@ -92,6 +116,43 @@ describe("Codex-style workbench", () => {
     await user.click(screen.getByRole("button", { name: "Allow once" }));
     expect(calls.approval).toEqual([{ runId: "run-live", approvalId: "approval-live", decision: "once" }]);
     Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+  });
+
+  it("confirms a detector candidate by id without exposing a working directory", async () => {
+    const user = userEvent.setup();
+    const confirmations: Array<[string, string]> = [];
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        project: {
+          importSelectedWorkspace: async () => ({
+            projectId: "p-candidate",
+            displayName: "node-fixture",
+            profile: { kinds: ["node"], candidates: [{ candidateId: "node.test", purpose: "test", argv: ["pnpm", "test"], workingDirectory: ".", timeoutMs: 120000, confirmedByUser: false, reason: "package.json script: test" }], notices: [] },
+          }),
+          list: async () => [],
+        },
+        model: { list: async () => [], save: async () => undefined },
+        credential: { status: async () => ({ configured: false, availability: "available" }), save: async () => ({ configured: true }) },
+        command: {
+          list: async () => [],
+          confirm: async (projectId: string, candidateId: string) => { confirmations.push([projectId, candidateId]); return undefined; },
+          remove: async () => undefined,
+        },
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await user.click(screen.getByRole("button", { name: /选择工作区/ }));
+      await user.click(screen.getByRole("button", { name: "Confirm test candidate" }));
+
+      expect(confirmations).toEqual([["p-candidate", "node.test"]]);
+      expect(screen.queryByText(/C:\\|Users|workspaceRoot/i)).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
   });
 
   it("renders a workspace rail, collapsed Inspector, bottom composer, and idle state", () => {

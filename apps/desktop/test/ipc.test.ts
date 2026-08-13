@@ -80,6 +80,37 @@ describe("desktop IPC", () => {
     expect(ipcMain.handlers.has("filesystem.write")).toBe(false);
   });
 
+  it("projects imported projects without a local workspace path while retaining command candidates", async () => {
+    const ipcMain = new FakeIpcMain();
+    const host = {
+      store: {
+        saveProject: vi.fn((project) => project),
+        listProjects: vi.fn(() => [{
+          projectId: "p1",
+          workspaceRoot: "C:\\Users\\Lenovo\\private-repo",
+          displayName: "private-repo",
+          profileJson: JSON.stringify({
+            kinds: ["node"],
+            candidates: [{ candidateId: "node.test", purpose: "test", argv: ["pnpm", "test"], workingDirectory: ".", timeoutMs: 120000, confirmedByUser: false, reason: "package.json script: test" }],
+            notices: [],
+          }),
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:00:00.000Z",
+        }]),
+        getProject: vi.fn(),
+      },
+    };
+    registerTodexIpc(ipcMain, host as never);
+
+    const projects = await ipcMain.handlers.get("project.list")?.({}, {});
+    expect(projects).toEqual([{
+      projectId: "p1",
+      displayName: "private-repo",
+      profile: expect.objectContaining({ candidates: [expect.objectContaining({ candidateId: "node.test", argv: ["pnpm", "test"] })] }),
+    }]);
+    expect(JSON.stringify(projects)).not.toContain("C:\\Users\\Lenovo");
+  });
+
   it("rejects invalid channel input with a stable redacted error", async () => {
     const ipcMain = new FakeIpcMain();
     registerTodexIpc(ipcMain, {} as never);
@@ -137,6 +168,61 @@ describe("desktop IPC", () => {
     await expect(
       ipcMain.handlers.get("run.start")?.({}, { projectId: "p1", task: "x", modelConfigId: "m1", workspaceRoot: "C:\\outside" }),
     ).rejects.toThrow("invalid_ipc_input");
+  });
+
+  it("confirms only a persisted detector candidate instead of renderer-supplied argv", async () => {
+    const ipcMain = new FakeIpcMain();
+    const savedCommands: unknown[] = [];
+    const host = {
+      store: {
+        getProject: vi.fn().mockReturnValue({
+          projectId: "p1",
+          workspaceRoot: "C:\\fixtures\\node",
+          profileJson: JSON.stringify({
+            kinds: ["node"],
+            candidates: [{
+              candidateId: "node.test",
+              purpose: "test",
+              argv: ["pnpm", "test"],
+              workingDirectory: ".",
+              timeoutMs: 120000,
+              confirmedByUser: false,
+              reason: "package.json script: test",
+            }],
+            notices: [],
+          }),
+        }),
+        saveCommand: vi.fn((command) => { savedCommands.push(command); return command; }),
+      },
+    };
+    registerTodexIpc(ipcMain, host as never);
+
+    await expect(
+      ipcMain.handlers.get("command.confirm")?.({}, { projectId: "p1", candidateId: "node.test" }),
+    ).resolves.toMatchObject({
+      projectId: "p1",
+      purpose: "test",
+      argv: ["pnpm", "test"],
+      workingDirectory: "C:\\fixtures\\node",
+      confirmedByUser: true,
+    });
+    await expect(
+      ipcMain.handlers.get("command.confirm")?.({}, {
+        projectId: "p1",
+        commandId: "evil",
+        purpose: "test",
+        argv: ["powershell", "-Command", "Remove-Item", "C:\\"],
+        workingDirectory: "C:\\",
+        timeoutMs: 1,
+        confirmedByUser: false,
+      }),
+    ).rejects.toThrow("invalid_ipc_input");
+
+    expect(savedCommands).toEqual([expect.objectContaining({
+      commandId: "p1:node.test",
+      argv: ["pnpm", "test"],
+      workingDirectory: "C:\\fixtures\\node",
+    })]);
   });
 
   it("creates a sandboxed browser window that denies navigation and new windows", () => {

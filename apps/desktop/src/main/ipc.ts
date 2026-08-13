@@ -1,11 +1,11 @@
-import { configuredCommandSchema, memoryEntrySchema, type ApprovalScope } from "@todex/contracts";
+import { memoryEntrySchema, type ApprovalScope } from "@todex/contracts";
 import { z } from "zod";
 
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ProjectDetector } from "@todex/harness-core";
+import { ProjectDetector, type DetectedProjectProfile } from "@todex/harness-core";
 
 import type { WorkspaceHost } from "./workspace-host.js";
 import type { WorkspaceSelector } from "./workspace-selector.js";
@@ -44,6 +44,7 @@ export const TODexIpcChannels = [
 const emptySchema = z.object({}).strict();
 const projectIdSchema = z.object({ projectId: z.string().min(1) }).strict();
 const commandIdSchema = z.object({ commandId: z.string().min(1) }).strict();
+const commandCandidateSchema = z.object({ projectId: z.string().min(1), candidateId: z.string().min(1) }).strict();
 const modelConfigSchema = z.object({ configId: z.string().min(1).optional(), projectId: z.string().min(1), baseUrl: z.string().url(), model: z.string().min(1) }).strict();
 const runIdSchema = z.object({ runId: z.string().min(1) }).strict();
 const runStartSchema = z.object({
@@ -76,10 +77,13 @@ export function registerTodexIpc(
       },
     }).detect();
     const now = new Date().toISOString();
-    return host.store.saveProject({ projectId, workspaceRoot: selected.workspaceRoot, displayName: selected.displayName, profileJson: JSON.stringify(profile), createdAt: now, updatedAt: now });
+    return projectProjection(host.store.saveProject({ projectId, workspaceRoot: selected.workspaceRoot, displayName: selected.displayName, profileJson: JSON.stringify(profile), createdAt: now, updatedAt: now }));
   });
-  register(ipcMain, "project.list", emptySchema, () => host.store.listProjects());
-  register(ipcMain, "project.get", projectIdSchema, (input) => host.store.getProject(input.projectId));
+  register(ipcMain, "project.list", emptySchema, () => host.store.listProjects().map(projectProjection));
+  register(ipcMain, "project.get", projectIdSchema, (input) => {
+    const project = host.store.getProject(input.projectId);
+    return project ? projectProjection(project) : undefined;
+  });
   register(ipcMain, "project.delete", projectIdSchema, (input) => host.store.deleteProject(input.projectId));
   register(ipcMain, "model.list", projectIdSchema, (input) => host.store.listModelConfigs(input.projectId));
   register(ipcMain, "model.save", modelConfigSchema, (input) => {
@@ -87,10 +91,23 @@ export function registerTodexIpc(
     return host.store.saveModelConfig({ configId: input.configId ?? randomUUID(), projectId: input.projectId, baseUrl: input.baseUrl, model: input.model, parametersJson: "{}", createdAt: now, updatedAt: now });
   });
 
-  register(ipcMain, "command.list", projectIdSchema, (input) => host.store.listCommands(input.projectId));
-  register(ipcMain, "command.confirm", configuredCommandSchema, (input) =>
-    host.store.saveCommand({ ...input, confirmedByUser: true }),
-  );
+  register(ipcMain, "command.list", projectIdSchema, (input) => host.store.listCommands(input.projectId).map(commandProjection));
+  register(ipcMain, "command.confirm", commandCandidateSchema, (input) => {
+    const project = host.store.getProject(input.projectId);
+    if (!project) throw new Error("project_not_found");
+    const profile = parseDetectedProfile(project.profileJson);
+    const candidate = profile.candidates.find((item) => item.candidateId === input.candidateId);
+    if (!candidate) throw new Error("candidate_not_found");
+    return host.store.saveCommand({
+      commandId: `${project.projectId}:${candidate.candidateId}`,
+      projectId: project.projectId,
+      purpose: candidate.purpose,
+      argv: [...candidate.argv],
+      workingDirectory: project.workspaceRoot,
+      timeoutMs: candidate.timeoutMs,
+      confirmedByUser: true,
+    });
+  });
   register(ipcMain, "command.remove", commandIdSchema, (input) => host.store.removeCommand(input.commandId));
 
   register(ipcMain, "run.list", projectIdSchema, (input) => host.store.listRuns(input.projectId));
@@ -146,6 +163,48 @@ export function registerTodexIpc(
   register(ipcMain, "credential.clear", credentialConfigSchema, (input) =>
     host.clearCredential(input.configId),
   );
+}
+
+const detectedProfileSchema = z.object({
+  kinds: z.array(z.enum(["node", "python"])),
+  candidates: z.array(z.object({
+    candidateId: z.string().min(1),
+    purpose: z.enum(["test", "lint", "typecheck", "build"]),
+    argv: z.array(z.string().min(1)).min(1),
+    workingDirectory: z.literal("."),
+    timeoutMs: z.literal(120_000),
+    confirmedByUser: z.literal(false),
+    reason: z.string(),
+  }).strict()),
+  notices: z.array(z.string()),
+}).strict();
+
+function parseDetectedProfile(raw: string): DetectedProjectProfile {
+  try {
+    return detectedProfileSchema.parse(JSON.parse(raw)) as DetectedProjectProfile;
+  } catch {
+    throw new Error("project_profile_invalid");
+  }
+}
+
+function projectProjection(project: { readonly projectId: string; readonly displayName: string; readonly profileJson: string }) {
+  return Object.freeze({
+    projectId: project.projectId,
+    displayName: project.displayName,
+    profile: parseDetectedProfile(project.profileJson),
+  });
+}
+
+function commandProjection(command: { readonly commandId: string; readonly projectId: string; readonly purpose: string; readonly argv: readonly string[]; readonly timeoutMs: number; readonly confirmedByUser: boolean; readonly lastResult?: "passed" | "failed" }) {
+  return Object.freeze({
+    commandId: command.commandId,
+    projectId: command.projectId,
+    purpose: command.purpose,
+    argv: Object.freeze([...command.argv]),
+    timeoutMs: command.timeoutMs,
+    confirmedByUser: command.confirmedByUser,
+    ...(command.lastResult ? { lastResult: command.lastResult } : {}),
+  });
 }
 
 function register<T>(

@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld("todex", {
   },
   command: {
     list: (projectId: string) => invoke("command.list", { projectId }),
-    confirm: (input: unknown) => invoke("command.confirm", input),
+    confirm: (projectId: string, candidateId: string) => invoke("command.confirm", { projectId, candidateId }),
     remove: (commandId: string) => invoke("command.remove", { commandId }),
   },
   run: {

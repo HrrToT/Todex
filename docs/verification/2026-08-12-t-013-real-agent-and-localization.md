@@ -38,6 +38,24 @@ The live-workbench interaction test imports a selected workspace, saves a model 
 starts a high-level run, renders a projected approval trace, sends `{ runId, approvalId, decision }`,
 and confirms that the password field is cleared after save.
 
+## Review Rework Evidence (2026-08-13)
+
+- `command.confirm` accepts only `{ projectId, candidateId }`. The main process parses the stored
+  detected profile and derives fixed argv, timeout and the project working directory. Renderer input
+  cannot supply argv, cwd, timeout or `confirmedByUser`.
+- Project and command IPC results are projections: project list/get/import omit `workspaceRoot`, and
+  command list omits working directories. The candidate UI confirms only its ID and displays argv,
+  never a local absolute path.
+- `DesktopRunService` rejects a second active run for one project and releases the project lock when
+  startup fails or a run becomes terminal. Its injected E2E keeps the first model request pending and
+  proves the second request returns `project_run_active`.
+- Cancellation now aborts an in-flight model request through a main-process-owned `AbortController`.
+  The runner records `run_cancelled` rather than a model error and does not dispatch a later action.
+  The focused E2E was RED by timeout before the hook and GREEN after it received the abort signal.
+- The live workbench now exposes a Chinese/English text toggle. Its interaction test confirms the
+  locale change keeps the governed preload run bridge intact. Locale persistence across a desktop
+  restart remains pending and is not claimed by this record.
+
 ## Security Evidence
 
 - The IPC allowlist rejects `credential.read`, generic filesystem and SQL operations, renderer workspace roots for a run, `project.selectWorkspace`, and direct `project.save` path writes.

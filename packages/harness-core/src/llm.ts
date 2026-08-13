@@ -22,6 +22,7 @@ export interface LlmTurnContext {
 
 export interface LlmClient {
   nextAction(context: LlmTurnContext): Promise<unknown>;
+  cancel?(runId: string): void;
 }
 
 export interface ToolDispatcher {

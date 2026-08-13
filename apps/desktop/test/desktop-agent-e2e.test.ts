@@ -174,4 +174,68 @@ describe("desktop governed agent flow", () => {
     expect(JSON.stringify(result)).not.toContain(API_KEY);
     expect(JSON.stringify(result)).not.toContain("not JSON");
   });
+
+  it("rejects a second active run for the same project", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-active-"));
+    temporaryDirectories.push(workspaceRoot);
+    const now = "2026-08-12T12:00:00.000Z";
+    const store = new FakeStore(
+      { projectId: "project-active", workspaceRoot, displayName: "node-fixture", profileJson: "{}", createdAt: now, updatedAt: now },
+      { configId: "model-active", projectId: "project-active", baseUrl: "https://example.invalid/v1", model: "mock-model", parametersJson: "{}", createdAt: now, updatedAt: now },
+      { commandId: "test", projectId: "project-active", purpose: "test", argv: ["node", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000, confirmedByUser: true },
+    );
+    let releaseFirst!: () => void;
+    const firstResponse = new Promise<string>((resolve) => { releaseFirst = () => resolve('{"tool":"finish","summary":"done"}'); });
+    const host = {
+      store,
+      readLlmConfiguration: async () => ({ baseUrl: "https://example.invalid/v1", model: "mock-model", apiKey: API_KEY }),
+    } as unknown as WorkspaceHost;
+    const service = new DesktopRunService({
+      host,
+      completionClientFactory: () => ({ complete: async () => firstResponse }),
+      now: () => new Date(now),
+      idFactory: (() => { let index = 0; return () => `active-${++index}`; })(),
+    });
+
+    const first = service.start({ projectId: "project-active", task: "first", modelConfigId: "model-active" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expect(service.start({ projectId: "project-active", task: "second", modelConfigId: "model-active" }))
+      .rejects.toThrow("project_run_active");
+    releaseFirst();
+    await expect(first).resolves.toMatchObject({ run: { status: "completed" } });
+  });
+
+  it("aborts an in-flight model request when the desktop run is cancelled", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-cancel-"));
+    temporaryDirectories.push(workspaceRoot);
+    const now = "2026-08-12T12:00:00.000Z";
+    const store = new FakeStore(
+      { projectId: "project-cancel", workspaceRoot, displayName: "node-fixture", profileJson: "{}", createdAt: now, updatedAt: now },
+      { configId: "model-cancel", projectId: "project-cancel", baseUrl: "https://example.invalid/v1", model: "mock-model", parametersJson: "{}", createdAt: now, updatedAt: now },
+      { commandId: "test", projectId: "project-cancel", purpose: "test", argv: ["node", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000, confirmedByUser: true },
+    );
+    let aborted = false;
+    const host = {
+      store,
+      readLlmConfiguration: async () => ({ baseUrl: "https://example.invalid/v1", model: "mock-model", apiKey: API_KEY }),
+    } as unknown as WorkspaceHost;
+    const service = new DesktopRunService({
+      host,
+      completionClientFactory: () => ({
+        complete: async (_request, signal) => new Promise<string>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => { aborted = true; reject(new Error("aborted")); }, { once: true });
+        }),
+      }),
+      now: () => new Date(now),
+      idFactory: () => "run-cancel",
+    });
+
+    const running = service.start({ projectId: "project-cancel", task: "wait", modelConfigId: "model-cancel" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    service.cancel("run-cancel");
+
+    await expect(running).resolves.toMatchObject({ run: { status: "cancelled", stopReason: "cancelled" } });
+    expect(aborted).toBe(true);
+    expect(store.listTraces("run-cancel").map((trace) => trace.type)).toEqual(["run_cancelled"]);
+  });
 });

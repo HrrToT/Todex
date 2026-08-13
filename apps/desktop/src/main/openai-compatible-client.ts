@@ -32,8 +32,10 @@ export class OpenAiCompatibleClient {
     this.endpoint = new URL("chat/completions", ensureTrailingSlash(options.baseUrl)).toString();
   }
 
-  async complete(request: OpenAiCompatibleRequest): Promise<string> {
+  async complete(request: OpenAiCompatibleRequest, externalSignal?: AbortSignal): Promise<string> {
     const controller = new AbortController();
+    const abortFromCaller = () => controller.abort();
+    externalSignal?.addEventListener("abort", abortFromCaller, { once: true });
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const response = await this.fetchImpl(this.endpoint, {
@@ -58,7 +60,7 @@ export class OpenAiCompatibleClient {
       return parseAssistantContent(body);
     } catch (error) {
       if (controller.signal.aborted) {
-        throw new Error("llm_timeout");
+        throw new Error(externalSignal?.aborted ? "llm_cancelled" : "llm_timeout");
       }
       if (error instanceof Error && isStableError(error.message)) {
         throw error;
@@ -66,6 +68,7 @@ export class OpenAiCompatibleClient {
       throw new Error("llm_network_error");
     } finally {
       clearTimeout(timeout);
+      externalSignal?.removeEventListener("abort", abortFromCaller);
     }
   }
 }

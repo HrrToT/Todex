@@ -26,7 +26,7 @@ import { OpenAiCompatibleClient } from "./openai-compatible-client.js";
 import type { WorkspaceHost } from "./workspace-host.js";
 
 export interface CompletionClient {
-  complete(request: { readonly systemPrompt: string; readonly userPrompt: string }): Promise<string>;
+  complete(request: { readonly systemPrompt: string; readonly userPrompt: string }, signal?: AbortSignal): Promise<string>;
 }
 
 export interface DesktopRunStartInput {
@@ -61,14 +61,17 @@ const FORMAT_REPAIR_SYSTEM_PROMPT = "Return one valid Todex JSON Action only. Do
 const FORMAT_REPAIR_USER_PROMPT = "Your previous response was not a valid Todex JSON Action. Return a valid JSON Action now.";
 
 export function createProtocolRepairingLlm(client: CompletionClient): LlmClient {
+  const controllers = new Map<string, AbortController>();
   return {
     async nextAction(context: LlmTurnContext): Promise<unknown> {
+      const controller = new AbortController();
+      controllers.set(context.runId, controller);
       let first: string;
       try {
         first = await client.complete({
           systemPrompt: ACTION_SYSTEM_PROMPT,
           userPrompt: buildTurnPrompt(context),
-        });
+        }, controller.signal);
       } catch {
         throw new Error("model_request_failed");
       }
@@ -81,7 +84,7 @@ export function createProtocolRepairingLlm(client: CompletionClient): LlmClient 
         repaired = await client.complete({
           systemPrompt: FORMAT_REPAIR_SYSTEM_PROMPT,
           userPrompt: FORMAT_REPAIR_USER_PROMPT,
-        });
+        }, controller.signal);
       } catch {
         throw new Error("model_request_failed");
       }
@@ -90,6 +93,9 @@ export function createProtocolRepairingLlm(client: CompletionClient): LlmClient 
         throw new Error("model_protocol_invalid");
       }
       return repairedAction;
+    },
+    cancel(runId: string): void {
+      controllers.get(runId)?.abort();
     },
   };
 }
@@ -101,6 +107,7 @@ export class DesktopRunService {
   private readonly now: () => Date;
   private readonly idFactory: () => string;
   private readonly active = new Map<string, AgentRunner>();
+  private readonly activeProjects = new Map<string, string>();
   private readonly snapshots = new Map<string, DesktopRunSnapshot>();
 
   constructor(options: DesktopRunServiceOptions) {
@@ -118,32 +125,37 @@ export class DesktopRunService {
     if (!config || (config.projectId !== undefined && config.projectId !== project.projectId)) {
       throw new Error("model_config_not_found");
     }
+    if (this.activeProjects.has(project.projectId)) {
+      throw new Error("project_run_active");
+    }
     const credential = await this.host.readLlmConfiguration(input.modelConfigId);
     const runId = this.idFactory();
+    this.activeProjects.set(project.projectId, runId);
     const startedAt = this.now().toISOString();
-    this.host.store.saveRun({
-      runId,
-      projectId: project.projectId,
-      taskText: input.task,
-      status: "running",
-      startedAt,
-      repairAttempts: 0,
-    });
+    try {
+      this.host.store.saveRun({
+        runId,
+        projectId: project.projectId,
+        taskText: input.task,
+        status: "running",
+        startedAt,
+        repairAttempts: 0,
+      });
 
-    const traceStore = new PersistedTraceStore(this.host, this.now);
-    const clock = { now: this.now };
-    const approvalStore = new PersistedApprovalStore(this.host, clock, this.idFactory);
-    const workspaceFs = new NodeWorkspaceFs({ workspaceRoot: project.workspaceRoot });
-    const memoryRepository = new SQLiteMemoryRepository(this.host);
-    const fileTools = new FileTools({ workspaceRoot: project.workspaceRoot, fs: workspaceFs, pathResolver: workspaceFs });
-    const dispatcher = new DesktopDispatcher({
-      fileTools,
-      memoryStore: new MemoryStore({ repository: memoryRepository, clock, memoryIdFactory: this.idFactory }),
-      traceStore,
-      commandRunner: this.commandRunner,
-      commandRegistry: new SQLiteCommandRegistry(this.host),
-    });
-    const runner = new AgentRunner({
+      const traceStore = new PersistedTraceStore(this.host, this.now);
+      const clock = { now: this.now };
+      const approvalStore = new PersistedApprovalStore(this.host, clock, this.idFactory);
+      const workspaceFs = new NodeWorkspaceFs({ workspaceRoot: project.workspaceRoot });
+      const memoryRepository = new SQLiteMemoryRepository(this.host);
+      const fileTools = new FileTools({ workspaceRoot: project.workspaceRoot, fs: workspaceFs, pathResolver: workspaceFs });
+      const dispatcher = new DesktopDispatcher({
+        fileTools,
+        memoryStore: new MemoryStore({ repository: memoryRepository, clock, memoryIdFactory: this.idFactory }),
+        traceStore,
+        commandRunner: this.commandRunner,
+        commandRegistry: new SQLiteCommandRegistry(this.host),
+      });
+      const runner = new AgentRunner({
       llm: createProtocolRepairingLlm(this.completionClientFactory(credential)),
       dispatcher,
       governance: new Guardrail({
@@ -160,10 +172,15 @@ export class DesktopRunService {
       ...(input.verificationCommandId
         ? { verificationRunner: new VerificationRunner({ registry: new SQLiteCommandRegistry(this.host), commandRunner: this.commandRunner }), verificationCommandId: input.verificationCommandId }
         : {}),
-    });
-    this.active.set(runId, runner);
-    const result = await runner.run({ runId, projectId: project.projectId, task: input.task, workspaceRoot: project.workspaceRoot });
-    return this.persistSnapshot(runId, result.status, result.stopReason, result.results, result.pendingApproval);
+      });
+      this.active.set(runId, runner);
+      const result = await runner.run({ runId, projectId: project.projectId, task: input.task, workspaceRoot: project.workspaceRoot });
+      return this.persistSnapshot(runId, result.status, result.stopReason, result.results, result.pendingApproval);
+    } catch (error) {
+      this.active.delete(runId);
+      this.activeProjects.delete(project.projectId);
+      throw error;
+    }
   }
 
   async decideApproval(input: { readonly runId: string; readonly approvalId: string; readonly decision: ApprovalScope }): Promise<DesktopRunSnapshot> {
@@ -193,7 +210,10 @@ export class DesktopRunService {
     });
     const snapshot: DesktopRunSnapshot = Object.freeze({ run, trace: Object.freeze([...this.host.store.listTraces(runId)]), results: Object.freeze([...results]), ...(pendingApproval ? { pendingApproval } : {}) });
     this.snapshots.set(runId, snapshot);
-    if (status !== "awaiting_approval" && status !== "running") this.active.delete(runId);
+    if (status !== "awaiting_approval" && status !== "running") {
+      this.active.delete(runId);
+      this.activeProjects.delete(run.projectId);
+    }
     return cloneSnapshot(snapshot);
   }
 }

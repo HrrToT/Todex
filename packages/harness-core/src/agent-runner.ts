@@ -115,6 +115,7 @@ export class AgentRunner {
 
   cancel(runId: string): void {
     this.cancelledRuns.add(runId);
+    this.llm.cancel?.(runId);
   }
 
   async run(input: RunInput): Promise<RunResult> {
@@ -285,6 +286,15 @@ export class AgentRunner {
       try {
         raw = await this.llm.nextAction(context);
       } catch (error) {
+        if (this.cancelledRuns.has(state.runId)) {
+          this.transitionSafely(state, "cancelled");
+          this.traceStore.append({
+            runId: state.runId,
+            type: "run_cancelled",
+            payloadSummary: "cancelled during LLM request",
+          });
+          return this.buildResult(state, "cancelled", "cancelled");
+        }
         const message = error instanceof Error ? error.message : String(error);
         this.transitionSafely(state, "failed");
         this.traceStore.append({

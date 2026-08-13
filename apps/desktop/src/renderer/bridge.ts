@@ -18,8 +18,13 @@ export interface TodexPreloadSurface {
     cancel(runId: string): Promise<unknown>;
   };
   project?: {
-    importSelectedWorkspace(): Promise<{ projectId: string; displayName: string } | undefined>;
-    list(): Promise<readonly { projectId: string; displayName: string }[]>;
+    importSelectedWorkspace(): Promise<DesktopProjectProjection | undefined>;
+    list(): Promise<readonly DesktopProjectProjection[]>;
+  };
+  command?: {
+    list(projectId: string): Promise<readonly unknown[]>;
+    confirm(projectId: string, candidateId: string): Promise<unknown>;
+    remove(commandId: string): Promise<unknown>;
   };
   model?: {
     list(projectId: string): Promise<readonly { configId: string; baseUrl: string; model: string }[]>;
@@ -28,6 +33,23 @@ export interface TodexPreloadSurface {
   credential?: {
     status(configId: string): Promise<{ configured: boolean; availability: "available" | "unavailable" }>;
     save(configId: string, apiKey: string): Promise<{ configured: true }>;
+  };
+}
+
+export interface DesktopCommandCandidate {
+  readonly candidateId: string;
+  readonly purpose: "test" | "lint" | "typecheck" | "build";
+  readonly argv: readonly string[];
+  readonly reason: string;
+}
+
+export interface DesktopProjectProjection {
+  readonly projectId: string;
+  readonly displayName: string;
+  readonly profile: {
+    readonly kinds: readonly ("node" | "python")[];
+    readonly candidates: readonly DesktopCommandCandidate[];
+    readonly notices: readonly string[];
   };
 }
 
