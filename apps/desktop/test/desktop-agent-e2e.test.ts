@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +17,7 @@ import {
   DesktopRunService,
   type CompletionClient,
 } from "../src/main/desktop-run-service.js";
+import { OpenAiCompatibleClient } from "../src/main/openai-compatible-client.js";
 import type { WorkspaceHost } from "../src/main/workspace-host.js";
 
 const API_KEY = "desktop-e2e-secret";
@@ -82,6 +84,116 @@ afterEach(() => {
 });
 
 describe("desktop governed agent flow", () => {
+  it("completes a governed Node fixture loop through a local Chat Completions HTTP boundary", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-http-e2e-"));
+    temporaryDirectories.push(workspaceRoot);
+    writeFileSync(join(workspaceRoot, "answer.ts"), "export const answer = 1;\n", "utf8");
+    const now = "2026-08-13T00:00:00.000Z";
+    const store = new FakeStore(
+      { projectId: "project-http", workspaceRoot, displayName: "node-fixture", profileJson: "{}", createdAt: now, updatedAt: now },
+      { configId: "model-http", projectId: "project-http", baseUrl: "http://127.0.0.1", model: "mock-model", parametersJson: "{}", createdAt: now, updatedAt: now },
+      { commandId: "test", projectId: "project-http", purpose: "test", argv: ["node", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000, confirmedByUser: true },
+    );
+    const actions = [
+      JSON.stringify({ tool: "apply_patch", patch: "--- a/answer.ts\n+++ b/answer.ts\n@@ -1 +1 @@\n-export const answer = 1;\n+export const answer = 2;\n" }),
+      JSON.stringify({ tool: "run_configured_command", commandId: "test" }),
+      JSON.stringify({ tool: "finish", summary: "done", completion: "verified" }),
+    ];
+    const requests: Array<{ url?: string; authorization?: string; body: string }> = [];
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        requests.push({ url: request.url, authorization: request.headers.authorization, body: Buffer.concat(chunks).toString("utf8") });
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({ choices: [{ message: { content: actions.shift() } }] }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test_server_address_missing");
+    const host = {
+      store,
+      readLlmConfiguration: async () => ({ baseUrl: `http://127.0.0.1:${address.port}/v1`, model: "mock-model", apiKey: API_KEY }),
+    } as unknown as WorkspaceHost;
+    const commandRunner = new RecordingCommandRunner();
+    const service = new DesktopRunService({
+      host,
+      completionClientFactory: (config) => new OpenAiCompatibleClient(config),
+      commandRunner,
+      now: () => new Date(now),
+      idFactory: (() => { let index = 0; return () => `http-${++index}`; })(),
+    });
+
+    try {
+      const pending = await service.start({ projectId: "project-http", task: "update answer", modelConfigId: "model-http" });
+      const completed = await service.decideApproval({ runId: pending.run.runId, approvalId: pending.pendingApproval!.approvalId, decision: "once" });
+
+      expect(readFileSync(join(workspaceRoot, "answer.ts"), "utf8")).toBe("export const answer = 2;\n");
+      expect(completed.run.status).toBe("completed");
+      expect(commandRunner.calls).toHaveLength(1);
+      expect(requests).toHaveLength(3);
+      expect(requests.every((request) => request.url === "/v1/chat/completions")).toBe(true);
+      expect(requests.every((request) => request.authorization === `Bearer ${API_KEY}`)).toBe(true);
+      expect(JSON.stringify(completed)).not.toContain(API_KEY);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("completes a governed Python fixture loop through a local Chat Completions HTTP boundary", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-python-http-e2e-"));
+    temporaryDirectories.push(workspaceRoot);
+    writeFileSync(join(workspaceRoot, "answer.py"), "answer = 1\n", "utf8");
+    const now = "2026-08-13T00:00:00.000Z";
+    const store = new FakeStore(
+      { projectId: "project-python-http", workspaceRoot, displayName: "python-fixture", profileJson: "{}", createdAt: now, updatedAt: now },
+      { configId: "model-python-http", projectId: "project-python-http", baseUrl: "http://127.0.0.1", model: "mock-model", parametersJson: "{}", createdAt: now, updatedAt: now },
+      { commandId: "test", projectId: "project-python-http", purpose: "test", argv: ["python", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000, confirmedByUser: true },
+    );
+    const actions = [
+      JSON.stringify({ tool: "apply_patch", patch: "--- a/answer.py\n+++ b/answer.py\n@@ -1 +1 @@\n-answer = 1\n+answer = 2\n" }),
+      JSON.stringify({ tool: "run_configured_command", commandId: "test" }),
+      JSON.stringify({ tool: "finish", summary: "done", completion: "verified" }),
+    ];
+    const endpoints: string[] = [];
+    const server = createServer((request, response) => {
+      endpoints.push(request.url ?? "");
+      request.resume();
+      request.on("end", () => {
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({ choices: [{ message: { content: actions.shift() } }] }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test_server_address_missing");
+    const host = {
+      store,
+      readLlmConfiguration: async () => ({ baseUrl: `http://127.0.0.1:${address.port}/v1`, model: "mock-model", apiKey: API_KEY }),
+    } as unknown as WorkspaceHost;
+    const commandRunner = new RecordingCommandRunner();
+    const service = new DesktopRunService({
+      host,
+      completionClientFactory: (config) => new OpenAiCompatibleClient(config),
+      commandRunner,
+      now: () => new Date(now),
+      idFactory: (() => { let index = 0; return () => `python-http-${++index}`; })(),
+    });
+
+    try {
+      const pending = await service.start({ projectId: "project-python-http", task: "update answer", modelConfigId: "model-python-http" });
+      const completed = await service.decideApproval({ runId: pending.run.runId, approvalId: pending.pendingApproval!.approvalId, decision: "once" });
+
+      expect(readFileSync(join(workspaceRoot, "answer.py"), "utf8")).toBe("answer = 2\n");
+      expect(completed.run.status).toBe("completed");
+      expect(commandRunner.calls).toEqual([{ argv: ["python", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000 }]);
+      expect(endpoints).toEqual(["/v1/chat/completions", "/v1/chat/completions", "/v1/chat/completions"]);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
   it("applies a safe patch, pauses a configured command, and exposes no credential", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-e2e-"));
     temporaryDirectories.push(workspaceRoot);

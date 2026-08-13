@@ -34,6 +34,14 @@ explicit `once` decision dispatches the fixed argv, and the run then finishes. T
 sentinel is absent from snapshots, traces, and captured model prompts. A second E2E proves
 two invalid responses stop with `model_protocol_invalid` without preserving either raw response.
 
+Two local loopback HTTP E2Es now use the production `OpenAiCompatibleClient` rather than a
+scripted completion adapter. Each temporary Node/Python fixture receives exactly three
+`POST /v1/chat/completions` responses: an ordinary unified diff, a configured command that pauses
+for `once` approval, and a verified finish. The Node and Python source files change only through
+the bounded patch tool; the injected command runner receives the pre-confirmed fixed argv only
+after approval. The temporary service binds to `127.0.0.1`, is closed in `finally`, and is not the
+public Render Demo or a new public endpoint.
+
 The live-workbench interaction test imports a selected workspace, saves a model and credential,
 starts a high-level run, renders a projected approval trace, sends `{ runId, approvalId, decision }`,
 and confirms that the password field is cleared after save.
