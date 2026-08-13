@@ -85,6 +85,7 @@ function makeGuardrail(
   clock?: FakeClock,
   store?: InMemoryApprovalStore,
   inspectPatch?: (patch: string) => PatchMetadata | undefined,
+  requireApprovalForConfiguredCommands = false,
 ): { guardrail: Guardrail; resolver: FakePathResolver; clock: FakeClock; store: InMemoryApprovalStore } {
   const r = resolver ?? new FakePathResolver();
   const c = clock ?? new FakeClock();
@@ -100,6 +101,7 @@ function makeGuardrail(
     clock: c,
     approvalIdFactory: createMonotonicIdFactory(),
     ...(inspectPatch ? { inspectPatch } : {}),
+    requireApprovalForConfiguredCommands,
   });
   return { guardrail, resolver: r, clock: c, store: s };
 }
@@ -140,6 +142,10 @@ function remember(content: string): Action {
 
 function finish(summary: string): Action {
   return { tool: "finish", summary, completion: "verified" };
+}
+
+function runConfiguredCommand(commandId = "test"): Action {
+  return { tool: "run_configured_command", commandId };
 }
 
 describe("Guardrail path classification", () => {
@@ -281,6 +287,16 @@ describe("Guardrail path classification", () => {
     const { guardrail } = makeGuardrail();
     const decision = guardrail.evaluate(finish("done"), makeContext());
     expect(decision).toMatchObject({ decision: "allow", reason: "safe_action" });
+  });
+
+  it("requires approval before dispatching a configured command", () => {
+    const { guardrail } = makeGuardrail(undefined, undefined, undefined, undefined, true);
+    const decision = guardrail.evaluate(runConfiguredCommand(), makeContext());
+
+    expect(decision).toMatchObject({
+      decision: "require_approval",
+      request: { tool: "run_configured_command", riskReasons: ["configured_command"] },
+    });
   });
 
   it("denies list_files with escaping path", () => {

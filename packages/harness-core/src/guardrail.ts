@@ -197,7 +197,7 @@ export function checkPath(
   path: string,
   resolver: PathResolver,
 ): { decision: "allow" | "deny"; denyReason?: string } {
-  const canonical = resolver.resolveCanonical(workspaceRoot, path);
+  const canonical = normalizePath(resolver.resolveCanonical(workspaceRoot, path));
   if (!isWithinWorkspace(canonical, workspaceRoot)) {
     return { decision: "deny", denyReason: "workspace_escape" };
   }
@@ -245,6 +245,8 @@ export interface GuardrailDeps {
   readonly clock: Clock;
   readonly approvalIdFactory: () => string;
   readonly inspectPatch?: (patch: string) => PatchMetadata | undefined;
+  /** Desktop runs can require an explicit decision for every configured command. */
+  readonly requireApprovalForConfiguredCommands?: boolean;
 }
 
 export class Guardrail implements GovernanceController {
@@ -253,6 +255,7 @@ export class Guardrail implements GovernanceController {
   private readonly clock: Clock;
   private readonly approvalIdFactory: () => string;
   private readonly inspectPatch: (patch: string) => PatchMetadata | undefined;
+  private readonly requireApprovalForConfiguredCommands: boolean;
 
   constructor(deps: GuardrailDeps) {
     this.pathResolver = deps.pathResolver;
@@ -260,6 +263,7 @@ export class Guardrail implements GovernanceController {
     this.clock = deps.clock;
     this.approvalIdFactory = deps.approvalIdFactory;
     this.inspectPatch = deps.inspectPatch ?? inspectUnifiedDiff;
+    this.requireApprovalForConfiguredCommands = deps.requireApprovalForConfiguredCommands ?? false;
   }
 
   evaluate(action: Action, context: GovernanceContext): GovernanceDecision {
@@ -274,7 +278,10 @@ export class Guardrail implements GovernanceController {
     }
 
     const now = this.clock.now();
-    if (this.approvalStore.matchesGrant(context, action, now)) {
+    if (
+      !(action.tool === "run_configured_command" && this.requireApprovalForConfiguredCommands) &&
+      this.approvalStore.matchesGrant(context, action, now)
+    ) {
       return { decision: "allow", reason: "approved_scope" };
     }
 
@@ -343,9 +350,13 @@ export class Guardrail implements GovernanceController {
         return { decision: "allow" };
       }
 
+      case "run_configured_command":
+        return this.requireApprovalForConfiguredCommands
+          ? { decision: "require_approval", riskReasons: ["configured_command"] }
+          : { decision: "allow" };
+
       case "remember":
       case "finish":
-      case "run_configured_command":
         return { decision: "allow" };
     }
   }

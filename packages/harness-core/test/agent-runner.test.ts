@@ -138,7 +138,7 @@ describe("AgentRunner scripted loop", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("completed_unverified");
     expect(dispatcher.calls).toHaveLength(1);
     expect(dispatcher.calls[0].action.tool).toBe("read_file");
     expect(result.trace.map((event) => event.type)).toEqual([
@@ -149,7 +149,7 @@ describe("AgentRunner scripted loop", () => {
     ]);
   });
 
-  it("does not dispatch finish and completes with verified status", async () => {
+  it("does not dispatch finish and remains unverified without a verification runner", async () => {
     const llm = new ScriptedMockLlm([
       { tool: "finish", summary: "done", completion: "verified" },
     ]);
@@ -163,7 +163,7 @@ describe("AgentRunner scripted loop", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("completed_unverified");
     expect(dispatcher.calls).toHaveLength(0);
     expect(result.trace.map((event) => event.type)).toEqual([
       "action_requested",
@@ -420,7 +420,7 @@ describe("AgentRunner dispatcher errors", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("completed_unverified");
     expect(result.results).toHaveLength(1);
     expect(result.results[0].status).toBe("failed");
     expect(result.results[0].summary).toContain("dispatcher error: disk unavailable");
@@ -612,7 +612,7 @@ describe("AgentRunner patch approval", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("completed_unverified");
     expect(calls).toHaveLength(1);
     expect(calls[0].action.tool).toBe("apply_patch");
   });
@@ -698,7 +698,7 @@ describe("AgentRunner patch approval without explicit inspector", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("completed_unverified");
     expect(calls).toHaveLength(1);
     expect(calls[0].action.tool).toBe("apply_patch");
   });
@@ -1020,7 +1020,7 @@ describe("AgentRunner remember memory integration", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("completed_unverified");
 
     expect(repository.all()).toHaveLength(0);
 
@@ -1115,7 +1115,7 @@ describe("AgentRunner remember trace evidence validation", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("completed_unverified");
     expect(result.results[0].status).toBe("failed");
     expect(result.results[0].summary).toBe("invalid_trace_evidence");
 

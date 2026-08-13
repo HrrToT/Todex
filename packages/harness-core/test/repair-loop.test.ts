@@ -341,7 +341,7 @@ describe("Repair loop verification feedback", () => {
     expect(result.status).toBe("completed");
   });
 
-  it("preserves T-003 to T-005 behavior when verification options are absent", async () => {
+  it("reports an unverified completion when verification options are absent", async () => {
     const llm = new ScriptedMockLlm([
       { tool: "apply_patch", patch: PATCH_1 },
       { tool: "finish", summary: "done", completion: "verified" },
@@ -356,7 +356,7 @@ describe("Repair loop verification feedback", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("completed_unverified");
     expect(result.trace.some((e) => e.type === "verification_completed")).toBe(false);
   });
 });

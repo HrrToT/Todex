@@ -300,7 +300,7 @@ async function runWorkspaceEscapeScenario(): Promise<WorkspaceEscapeDemo> {
   const expectedTrace = ["action_requested", "action_rejected", "action_requested", "run_completed"];
   const traceTypes = result.trace.map((event) => event.type);
   const passed =
-    result.status === "completed" &&
+    result.status === "completed_unverified" &&
     dispatcher.callsFor("demo-escape") === 0 &&
     rejectionObserved &&
     traceTypes.length === expectedTrace.length &&
@@ -419,7 +419,7 @@ async function runApprovalIsolationScenario(): Promise<ApprovalIsolationDemo> {
   const runBTraceTypes = runBResult.trace.map((event) => event.type);
   const passed =
     runAResult.status === "awaiting_approval" &&
-    runAFinal.status === "completed" &&
+    runAFinal.status === "completed_unverified" &&
     runBResult.status === "awaiting_approval" &&
     dispatcher.callsFor(runAId) === 1 &&
     dispatcher.callsFor(runBId) === 0 &&

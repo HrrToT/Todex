@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TODexIpcChannels, registerTodexIpc } from "../src/main/ipc.js";
 import { createDesktopWindow } from "../src/main/index.js";
+import type { DesktopRunService } from "../src/main/desktop-run-service.js";
 
 type Handler = (event: unknown, input: unknown) => unknown;
 
@@ -28,25 +29,31 @@ class FakeBrowserWindow {
 }
 
 const EXPECTED_CHANNELS = [
-  "project.selectWorkspace",
+  "workspace.choose",
+  "project.importSelectedWorkspace",
   "project.list",
   "project.get",
-  "project.save",
   "project.delete",
+  "model.list",
+  "model.save",
   "command.list",
   "command.confirm",
   "command.remove",
   "run.list",
+  "run.start",
   "run.get",
+  "run.snapshot",
   "run.cancel",
+  "run.subscribe",
+  "run.unsubscribe",
   "approval.listPending",
   "approval.decide",
   "memory.list",
-  "memory.save",
   "memory.delete",
   "credential.status",
-  "credential.save",
   "credential.clear",
+  "settings.getLocale",
+  "settings.setLocale",
 ];
 
 describe("desktop IPC", () => {
@@ -60,6 +67,63 @@ describe("desktop IPC", () => {
     expect(ipcMain.handlers.has("credential.read")).toBe(false);
     expect(ipcMain.handlers.has("sql.execute")).toBe(false);
     expect(ipcMain.handlers.has("filesystem.read")).toBe(false);
+    expect(ipcMain.handlers.has("project.selectWorkspace")).toBe(false);
+    expect(ipcMain.handlers.has("project.save")).toBe(false);
+    expect(ipcMain.handlers.has("credential.save")).toBe(false);
+    expect(ipcMain.handlers.has("memory.save")).toBe(false);
+  });
+
+  it("exposes workspace selection but no renderer-supplied filesystem operation", () => {
+    const ipcMain = new FakeIpcMain();
+    const selector = { choose: vi.fn().mockResolvedValue({ workspaceRoot: "C:\\fixtures\\node", displayName: "node" }) };
+
+    registerTodexIpc(ipcMain, {} as never, selector);
+
+    expect(ipcMain.handlers.has("workspace.choose")).toBe(true);
+    expect(ipcMain.handlers.has("filesystem.read")).toBe(false);
+    expect(ipcMain.handlers.has("filesystem.write")).toBe(false);
+  });
+
+  it("projects native workspace selection without returning its absolute path", async () => {
+    const ipcMain = new FakeIpcMain();
+    const selector = { choose: vi.fn().mockResolvedValue({ workspaceRoot: "C:\\Users\\Lenovo\\private-repo", displayName: "private-repo" }) };
+    registerTodexIpc(ipcMain, {} as never, selector);
+
+    const selected = await ipcMain.handlers.get("workspace.choose")?.({}, {});
+
+    expect(selected).toEqual({ displayName: "private-repo" });
+    expect(JSON.stringify(selected)).not.toContain("C:\\Users\\Lenovo");
+  });
+
+  it("projects imported projects without a local workspace path while retaining command candidates", async () => {
+    const ipcMain = new FakeIpcMain();
+    const host = {
+      store: {
+        saveProject: vi.fn((project) => project),
+        listProjects: vi.fn(() => [{
+          projectId: "p1",
+          workspaceRoot: "C:\\Users\\Lenovo\\private-repo",
+          displayName: "private-repo",
+          profileJson: JSON.stringify({
+            kinds: ["node"],
+            candidates: [{ candidateId: "node.test", purpose: "test", argv: ["pnpm", "test"], workingDirectory: ".", timeoutMs: 120000, confirmedByUser: false, reason: "package.json script: test" }],
+            notices: [],
+          }),
+          createdAt: "2026-08-13T00:00:00.000Z",
+          updatedAt: "2026-08-13T00:00:00.000Z",
+        }]),
+        getProject: vi.fn(),
+      },
+    };
+    registerTodexIpc(ipcMain, host as never);
+
+    const projects = await ipcMain.handlers.get("project.list")?.({}, {});
+    expect(projects).toEqual([{
+      projectId: "p1",
+      displayName: "private-repo",
+      profile: expect.objectContaining({ candidates: [expect.objectContaining({ candidateId: "node.test", argv: ["pnpm", "test"] })] }),
+    }]);
+    expect(JSON.stringify(projects)).not.toContain("C:\\Users\\Lenovo");
   });
 
   it("rejects invalid channel input with a stable redacted error", async () => {
@@ -74,11 +138,10 @@ describe("desktop IPC", () => {
     );
   });
 
-  it("scopes credential IPC to a model config and returns redacted lifecycle DTOs", async () => {
+  it("exposes only credential status and clearing lifecycle operations", async () => {
     const ipcMain = new FakeIpcMain();
     const host = {
       credentialStatus: vi.fn().mockResolvedValue({ configured: true, availability: "available" }),
-      saveCredential: vi.fn().mockResolvedValue({ configured: true }),
       clearCredential: vi.fn().mockResolvedValue({ configured: false }),
     };
     registerTodexIpc(ipcMain, host as never);
@@ -86,19 +149,233 @@ describe("desktop IPC", () => {
     await expect(ipcMain.handlers.get("credential.status")?.({}, { configId: "config-1" })).resolves.toEqual(
       { configured: true, availability: "available" },
     );
-    await expect(
-      ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "secret-value" }),
-    ).resolves.toEqual({ configured: true });
     await expect(ipcMain.handlers.get("credential.clear")?.({}, { configId: "config-1" })).resolves.toEqual({
       configured: false,
     });
 
     expect(host.credentialStatus).toHaveBeenCalledWith("config-1");
-    expect(host.saveCredential).toHaveBeenCalledWith("config-1", "secret-value");
     expect(host.clearCredential).toHaveBeenCalledWith("config-1");
-    expect(
-      JSON.stringify(await ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "secret-value" })),
-    ).not.toContain("secret-value");
+  });
+
+  it("persists only the supported locale through intention-level settings IPC", async () => {
+    const ipcMain = new FakeIpcMain();
+    const host = {
+      store: {
+        getLocale: vi.fn(() => "zh-CN"),
+        setLocale: vi.fn((locale: string) => locale),
+      },
+    };
+    registerTodexIpc(ipcMain, host as never);
+
+    await expect(ipcMain.handlers.get("settings.getLocale")?.({}, {})).resolves.toEqual({ locale: "zh-CN" });
+    await expect(ipcMain.handlers.get("settings.setLocale")?.({}, { locale: "en-US" })).resolves.toEqual({ locale: "en-US" });
+    await expect(ipcMain.handlers.get("settings.setLocale")?.({}, { locale: "fr-FR" })).rejects.toThrow("invalid_ipc_input");
+    await expect(ipcMain.handlers.get("settings.setLocale")?.({}, { locale: "zh-CN", key: "arbitrary" })).rejects.toThrow("invalid_ipc_input");
+
+    expect(host.store.setLocale).toHaveBeenCalledWith("en-US");
+  });
+
+  it("exposes only high-level run intent to the main-process service", async () => {
+    const ipcMain = new FakeIpcMain();
+    const service = {
+      startBackground: vi.fn().mockResolvedValue({ run: { runId: "run-1", projectId: "p1", status: "running", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 }, trace: [], results: [] }),
+      snapshot: vi.fn().mockReturnValue(undefined),
+      cancel: vi.fn(),
+      decideApproval: vi.fn(),
+    } as unknown as DesktopRunService;
+    const host = { store: { listProjects: vi.fn(), getProject: vi.fn(), listCommands: vi.fn(), listRuns: vi.fn(), getRun: vi.fn(), listPendingApprovals: vi.fn(), listMemories: vi.fn() } };
+    registerTodexIpc(ipcMain, host as never, undefined, service);
+
+    await expect(
+      ipcMain.handlers.get("run.start")?.({}, { projectId: "p1", task: "修复测试", modelConfigId: "m1" }),
+    ).resolves.toMatchObject({ run: { runId: "run-1" } });
+    expect(service.startBackground).toHaveBeenCalledWith({ projectId: "p1", task: "修复测试", modelConfigId: "m1" });
+    await expect(
+      ipcMain.handlers.get("run.start")?.({}, { projectId: "p1", task: "x", modelConfigId: "m1", workspaceRoot: "C:\\outside" }),
+    ).rejects.toThrow("invalid_ipc_input");
+  });
+
+  it("returns a redacted run projection instead of the original task text", async () => {
+    const ipcMain = new FakeIpcMain();
+    const service = {
+      startBackground: vi.fn().mockResolvedValue({
+        run: { runId: "run-1", projectId: "p1", taskText: "API_KEY=secret-value", status: "running", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
+        trace: [], results: [],
+      }),
+      snapshot: vi.fn(), cancel: vi.fn(), decideApproval: vi.fn(),
+    } as unknown as DesktopRunService;
+    const host = { store: { listProjects: vi.fn(), getProject: vi.fn(), listCommands: vi.fn(), listRuns: vi.fn(), getRun: vi.fn(), listPendingApprovals: vi.fn(), listMemories: vi.fn() } };
+    registerTodexIpc(ipcMain, host as never, undefined, service);
+
+    const snapshot = await ipcMain.handlers.get("run.start")?.({}, { projectId: "p1", task: "API_KEY=secret-value", modelConfigId: "m1" });
+
+    expect(snapshot).toMatchObject({ run: { runId: "run-1", status: "running" }, trace: [], results: [] });
+    expect(JSON.stringify(snapshot)).not.toContain("secret-value");
+    expect(JSON.stringify(snapshot)).not.toContain("taskText");
+  });
+
+  it("subscribes only to redacted background run updates", async () => {
+    const ipcMain = new FakeIpcMain();
+    const listeners: Array<{ active: boolean; listener: (snapshot: unknown) => void }> = [];
+    const service = {
+      subscribe: vi.fn((listener: (snapshot: unknown) => void) => {
+        const entry = { active: true, listener };
+        listeners.push(entry);
+        return () => { entry.active = false; };
+      }),
+      snapshot: vi.fn(() => ({
+        run: { runId: "run-1", projectId: "p1", taskText: "API_KEY=secret-value", status: "running", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
+        trace: [], results: [],
+      })),
+    } as unknown as DesktopRunService;
+    const host = { store: { getRun: vi.fn(() => ({ runId: "run-1" })) } };
+    const send = vi.fn();
+    registerTodexIpc(ipcMain, host as never, undefined, service);
+
+    await expect(ipcMain.handlers.get("run.subscribe")?.({ sender: { send } }, { runId: "run-1" })).resolves.toEqual({ subscribed: true });
+    expect(send).toHaveBeenCalledWith("run.update", expect.objectContaining({
+      run: expect.objectContaining({ runId: "run-1", status: "running" }),
+    }));
+    send.mockClear();
+    listeners[0]?.listener({
+      run: { runId: "another-run", projectId: "p1", taskText: "API_KEY=secret-value", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
+      trace: [], results: [],
+    });
+    expect(send).not.toHaveBeenCalled();
+    listeners[0]?.listener({
+      run: { runId: "run-1", projectId: "p1", taskText: "API_KEY=secret-value", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
+      trace: [], results: [],
+    });
+
+    expect(send).toHaveBeenCalledWith("run.update", expect.objectContaining({ run: expect.objectContaining({ runId: "run-1", status: "completed" }) }));
+    expect(JSON.stringify(send.mock.calls)).not.toContain("secret-value");
+    expect(JSON.stringify(send.mock.calls)).not.toContain("taskText");
+  });
+
+  it("keeps matching run subscriptions independent for separate renderer senders", async () => {
+    const ipcMain = new FakeIpcMain();
+    const listeners: Array<{ active: boolean; listener: (snapshot: unknown) => void }> = [];
+    const service = {
+      subscribe: vi.fn((listener: (snapshot: unknown) => void) => {
+        const entry = { active: true, listener };
+        listeners.push(entry);
+        return () => { entry.active = false; };
+      }),
+      snapshot: vi.fn(() => undefined),
+    } as unknown as DesktopRunService;
+    const host = { store: {} };
+    const firstSend = vi.fn();
+    const secondSend = vi.fn();
+    registerTodexIpc(ipcMain, host as never, undefined, service);
+
+    await ipcMain.handlers.get("run.subscribe")?.({ sender: { send: firstSend } }, { runId: "run-1" });
+    await ipcMain.handlers.get("run.subscribe")?.({ sender: { send: secondSend } }, { runId: "run-1" });
+    for (const entry of listeners) {
+      if (!entry.active) continue;
+      entry.listener({
+        run: { runId: "run-1", projectId: "p1", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
+        trace: [], results: [],
+      });
+    }
+
+    expect(firstSend).toHaveBeenCalledWith("run.update", expect.objectContaining({ run: { runId: "run-1", projectId: "p1", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 } }));
+    expect(secondSend).toHaveBeenCalledWith("run.update", expect.objectContaining({ run: { runId: "run-1", projectId: "p1", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 } }));
+  });
+
+  it("cleans a destroyed renderer sender without affecting another subscription", async () => {
+    const ipcMain = new FakeIpcMain();
+    const listeners: Array<{ active: boolean; listener: (snapshot: unknown) => void }> = [];
+    const service = { subscribe: vi.fn((listener: (snapshot: unknown) => void) => { const entry = { active: true, listener }; listeners.push(entry); return () => { entry.active = false; }; }), snapshot: vi.fn(() => undefined) } as unknown as DesktopRunService;
+    const firstDestroyed: Array<() => void> = [];
+    const firstSend = vi.fn(); const secondSend = vi.fn();
+    const first = { send: firstSend, on: (_event: "destroyed", listener: () => void) => firstDestroyed.push(listener) };
+    const second = { send: secondSend };
+    registerTodexIpc(ipcMain, { store: {} } as never, undefined, service);
+    await ipcMain.handlers.get("run.subscribe")?.({ sender: first }, { runId: "run-1" });
+    await ipcMain.handlers.get("run.subscribe")?.({ sender: second }, { runId: "run-1" });
+    firstDestroyed[0]?.();
+    for (const entry of listeners) if (entry.active) entry.listener({ run: { runId: "run-1", projectId: "p1", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 }, trace: [], results: [] });
+    expect(firstSend).not.toHaveBeenCalled();
+    expect(secondSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps task text and credential references out of all renderer query projections", async () => {
+    const ipcMain = new FakeIpcMain();
+    const rawRun = { runId: "run-1", projectId: "p1", taskText: "API_KEY=secret-value", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 };
+    const rawModel = { configId: "m1", projectId: "p1", baseUrl: "https://models.example.invalid/v1", model: "model", parametersJson: "{}", credentialRef: "credential-private-ref", createdAt: "2026-08-13T00:00:00.000Z", updatedAt: "2026-08-13T00:00:00.000Z" };
+    const host = {
+      store: {
+        listRuns: vi.fn(() => [rawRun]), getRun: vi.fn(() => rawRun),
+        listModelConfigs: vi.fn(() => [rawModel]), saveModelConfig: vi.fn(() => rawModel),
+      },
+    };
+    registerTodexIpc(ipcMain, host as never);
+
+    const values = await Promise.all([
+      ipcMain.handlers.get("run.list")?.({}, { projectId: "p1" }),
+      ipcMain.handlers.get("run.get")?.({}, { runId: "run-1" }),
+      ipcMain.handlers.get("model.list")?.({}, { projectId: "p1" }),
+    ]);
+
+    expect(JSON.stringify(values)).not.toContain("secret-value");
+    expect(JSON.stringify(values)).not.toContain("taskText");
+    expect(JSON.stringify(values)).not.toContain("credential-private-ref");
+    expect(JSON.stringify(values)).not.toContain("credentialRef");
+  });
+
+  it("confirms only a persisted detector candidate instead of renderer-supplied argv", async () => {
+    const ipcMain = new FakeIpcMain();
+    const savedCommands: unknown[] = [];
+    const host = {
+      store: {
+        getProject: vi.fn().mockReturnValue({
+          projectId: "p1",
+          workspaceRoot: "C:\\fixtures\\node",
+          profileJson: JSON.stringify({
+            kinds: ["node"],
+            candidates: [{
+              candidateId: "node.test",
+              purpose: "test",
+              argv: ["pnpm", "test"],
+              workingDirectory: ".",
+              timeoutMs: 120000,
+              confirmedByUser: false,
+              reason: "package.json script: test",
+            }],
+            notices: [],
+          }),
+        }),
+        saveCommand: vi.fn((command) => { savedCommands.push(command); return command; }),
+      },
+    };
+    registerTodexIpc(ipcMain, host as never);
+
+    await expect(
+      ipcMain.handlers.get("command.confirm")?.({}, { projectId: "p1", candidateId: "node.test" }),
+    ).resolves.toMatchObject({
+      projectId: "p1",
+      purpose: "test",
+      argv: ["pnpm", "test"],
+      workingDirectory: "C:\\fixtures\\node",
+      confirmedByUser: true,
+    });
+    await expect(
+      ipcMain.handlers.get("command.confirm")?.({}, {
+        projectId: "p1",
+        commandId: "evil",
+        purpose: "test",
+        argv: ["powershell", "-Command", "Remove-Item", "C:\\"],
+        workingDirectory: "C:\\",
+        timeoutMs: 1,
+        confirmedByUser: false,
+      }),
+    ).rejects.toThrow("invalid_ipc_input");
+
+    expect(savedCommands).toEqual([expect.objectContaining({
+      commandId: "p1:node.test",
+      argv: ["pnpm", "test"],
+      workingDirectory: "C:\\fixtures\\node",
+    })]);
   });
 
   it("creates a sandboxed browser window that denies navigation and new windows", () => {

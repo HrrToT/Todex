@@ -746,6 +746,24 @@ interactive visual acceptance.
 
 ### Placeholder scan
 
+### T-013 Local implementation checkpoint (2026-08-12)
+
+- [x] Chinese-first Desktop and Mock Demo copy with retained English mode.
+- [x] Main-process workspace selection, project import/detection, OpenAI Chat Completions client, bounded filesystem/command adapters, and high-level governed Run IPC.
+- [x] Every desktop `run_configured_command` requires an explicit approval decision before dispatch; normal read/search/safe patch remain governed automatic actions.
+- [x] Focused desktop E2E proves safe patch -> zero command dispatch before approval -> approved fixed argv -> finish, with a credential sentinel absent from projections and traces.
+- [x] T-013 review rework closes candidate-derived command confirmation, local-path projection, one-active-run-per-project and cancellation of in-flight model requests and approved fixed commands; the live workbench also exposes a session-local Chinese/English toggle.
+- [x] Locale preference is now constrained to `zh-CN`/`en-US`, persisted through the main-process SQLite settings store, and exposed only through `settings.getLocale`/`settings.setLocale`; all renderer-accessible workspace/model/run queries now use redacted projections.
+- [x] Local loopback Mock HTTP E2Es use the production Chat Completions client to complete both Node and Python fixture patch -> command approval -> verified finish flows, without changing the public Render Mock Demo boundary.
+- [x] Live desktop runs now return an immediate redacted `running` projection and stream matching redacted snapshots through `run.subscribe` / `run.unsubscribe`; subscribers receive a current-snapshot replay, and the workbench exposes a localized stop control for the existing governed cancellation path.
+- [x] Run-stream subscriptions are sender-scoped, so separate Electron windows can observe the same Run without either renderer removing the other's listener.
+- [x] Independent T-013 review rework closes background terminal-state loss, immediate awaiting-approval cancellation, schema-valid model summary path/key redaction, and localized terminal Run status rendering.
+- [x] Remaining live-workbench setup labels, notices, candidate confirmation and accessibility text use the `zh-CN` / `en-US` catalog; argv, paths, diffs, JSON and trace type evidence remain literal.
+- [x] Pre-merge security rework removes Renderer/IPC API-key capture and arbitrary memory writes, redacts an active credential value before task/trace persistence, passes a user-confirmed verification command from the live workbench, and returns `completed_unverified` whenever no verification runner exists.
+- [x] Pre-merge robustness rework rolls back ordinary multi-file Node workspace write failures and removes sender-scoped run subscriptions when an Electron renderer is destroyed or cannot receive updates.
+- [ ] Independent specification/security review, GitHub CI, and Windows installed-app manual acceptance remain required before release.
+- [ ] Local complete Vitest evidence remains blocked by missing `better-sqlite3` Node ABI 137 binding under Node 24.14.0; do not suppress the existing SQLite/WorkspaceHost tests.
+
 ????????????????????????????????????????????????????????????????
 
 ### Type consistency

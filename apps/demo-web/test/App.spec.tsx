@@ -48,6 +48,15 @@ function createClient(initial: DemoSnapshot, afterScenario: DemoSnapshot, afterR
 }
 
 describe("public mock demo workbench", () => {
+  it("uses Chinese labels for the fixed public demo by default", async () => {
+    const client = createClient(snapshot(), snapshot({ selectedScenario: "repair-feedback" }), snapshot());
+    render(<App client={client} />);
+
+    expect(screen.getByRole("heading", { name: "受限演示" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "修复反馈" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "运行场景" })).toBeDisabled();
+  });
+
   it("preserves a selected scenario when an older session read resolves later", async () => {
     const user = userEvent.setup();
     const initialRead = deferred<DemoSnapshot>();
@@ -60,7 +69,7 @@ describe("public mock demo workbench", () => {
       reset: async () => snapshot(),
     };
 
-    render(<App client={client} />);
+    render(<App client={client} locale="en-US" />);
     await user.click(screen.getByRole("button", { name: "Repair feedback" }));
 
     expect(screen.getByRole("button", { name: "Repair feedback" })).toHaveAttribute("aria-pressed", "true");
@@ -92,7 +101,7 @@ describe("public mock demo workbench", () => {
       }),
     );
 
-    render(<App client={client} />);
+    render(<App client={client} locale="en-US" />);
     await user.click(screen.getByRole("button", { name: "Repair feedback" }));
     await user.click(screen.getByRole("button", { name: "Run scenario" }));
 
@@ -136,7 +145,7 @@ describe("public mock demo workbench", () => {
       },
     };
 
-    render(<App client={client} />);
+    render(<App client={client} locale="en-US" />);
     const workspaceEscape = screen.getByRole("button", { name: "Workspace escape" });
     const repairFeedback = screen.getByRole("button", { name: "Repair feedback" });
     const approvalIsolation = screen.getByRole("button", { name: "Approval isolation" });
@@ -220,7 +229,7 @@ describe("public mock demo workbench", () => {
       },
     };
 
-    render(<App client={client} />);
+    render(<App client={client} locale="en-US" />);
     await user.click(screen.getByRole("button", { name: "Approval isolation" }));
     await user.click(screen.getByRole("button", { name: "Run scenario" }));
     await user.click(screen.getByRole("button", { name: "Deny" }));
@@ -231,7 +240,7 @@ describe("public mock demo workbench", () => {
   });
 
   it("offers only semantic fixed controls and no visitor execution inputs", () => {
-    render(<App client={createClient(snapshot(), snapshot(), snapshot())} />);
+    render(<App client={createClient(snapshot(), snapshot(), snapshot())} locale="en-US" />);
 
     expect(screen.getByRole("heading", { name: "Mock Demo" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Scenarios" })).toBeVisible();

@@ -12,6 +12,7 @@
     }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "pnpm --filter @todex/contracts build && vitest run"
   },
   "dependencies": {

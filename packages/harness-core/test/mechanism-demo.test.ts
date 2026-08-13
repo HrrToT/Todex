@@ -9,7 +9,7 @@ describe("mechanism demo", () => {
     expect(report.allPassed).toBe(true);
     expect(report.workspaceEscape).toMatchObject({
       passed: true,
-      status: "completed",
+      status: "completed_unverified",
       denialReason: "workspace_escape",
       dispatcherCalls: 0,
     });
@@ -22,7 +22,7 @@ describe("mechanism demo", () => {
     });
     expect(report.approvalIsolation).toMatchObject({
       passed: true,
-      runAStatus: "completed",
+      runAStatus: "completed_unverified",
       runBStatus: "awaiting_approval",
       runADispatcherCalls: 1,
       runBDispatcherCalls: 0,

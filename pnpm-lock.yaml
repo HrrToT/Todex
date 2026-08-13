@@ -75,6 +75,9 @@ importers:
       '@todex/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@todex/harness-core':
+        specifier: workspace:*
+        version: link:../../packages/harness-core
       better-sqlite3:
         specifier: ^12.2.0
         version: 12.11.1
