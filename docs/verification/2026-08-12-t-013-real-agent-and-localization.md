@@ -52,6 +52,10 @@ and confirms that the password field is cleared after save.
 - Cancellation now aborts an in-flight model request through a main-process-owned `AbortController`.
   The runner records `run_cancelled` rather than a model error and does not dispatch a later action.
   The focused E2E was RED by timeout before the hook and GREEN after it received the abort signal.
+- The same cancellation path now aborts an already-approved `run_configured_command`. The desktop
+  dispatcher owns an abort controller per run and passes its signal only to the fixed command runner;
+  the red E2E timed out before this path existed and the green E2E proves the command received abort
+  and the terminal projection is `cancelled`.
 - The live workbench now exposes a Chinese/English text toggle. Its interaction test confirms the
   locale change keeps the governed preload run bridge intact. Locale persistence across a desktop
   restart remains pending and is not claimed by this record.

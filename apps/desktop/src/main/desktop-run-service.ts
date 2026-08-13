@@ -255,6 +255,7 @@ class PersistedApprovalStore implements ApprovalStore {
 
 class DesktopDispatcher {
   private readonly harness: HarnessDispatcher;
+  private readonly commandControllers = new Map<string, AbortController>();
   constructor(private readonly deps: { readonly fileTools: FileTools; readonly memoryStore: MemoryStore; readonly traceStore: TraceStore; readonly commandRunner: CommandRunner; readonly commandRegistry: ConfiguredCommandRegistry }) {
     this.harness = new HarnessDispatcher({ fileTools: deps.fileTools, memoryStore: deps.memoryStore, traceStore: deps.traceStore });
   }
@@ -262,9 +263,16 @@ class DesktopDispatcher {
     if (action.tool !== "run_configured_command") return this.harness.dispatch(action, context);
     const command = this.deps.commandRegistry.find(context.projectId, action.commandId);
     if (!command || !command.confirmedByUser) return failedResult(context.actionId, "command_not_found");
-    const outcome = await this.deps.commandRunner.run({ argv: command.argv, workingDirectory: command.workingDirectory, timeoutMs: command.timeoutMs });
-    return commandResult(context.actionId, outcome);
+    const controller = new AbortController();
+    this.commandControllers.set(context.runId, controller);
+    try {
+      const outcome = await this.deps.commandRunner.run({ argv: command.argv, workingDirectory: command.workingDirectory, timeoutMs: command.timeoutMs }, controller.signal);
+      return commandResult(context.actionId, outcome);
+    } finally {
+      this.commandControllers.delete(context.runId);
+    }
   }
+  cancel(runId: string): void { this.commandControllers.get(runId)?.abort(); }
 }
 
 function commandResult(actionId: string, outcome: CommandExecution): ToolResult {

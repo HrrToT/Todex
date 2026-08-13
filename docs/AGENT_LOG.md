@@ -1,6 +1,6 @@
 # Todex Agent ????
 
-| 2026-08-13T14:10:00+08:00 | T-013 review rework | Codex TDD and focused desktop checks | Closed renderer command construction and path-projection boundaries, per-project concurrent runs, in-flight model cancellation, candidate confirmation UI, and session locale switching. | RED: cancellation E2E timed out before the abort hook and locale-switch UI was absent. GREEN: focused workbench 10/10, IPC/E2E and harness checks passed locally; typecheck passed. | Locale persistence, independent review, CI, installed-app manual acceptance and real-model acceptance remain open. | Do not claim the local implementation as released or fully accepted. |
+| 2026-08-13T14:10:00+08:00 | T-013 review rework | Codex TDD and focused desktop checks | Closed renderer command construction and path-projection boundaries, per-project concurrent runs, model and approved-command cancellation, candidate confirmation UI, and session locale switching. | RED: cancellation E2Es timed out before abort hooks and locale-switch UI was absent. GREEN: focused workbench 10/10, IPC/E2E and harness checks passed locally; typecheck passed. | Locale persistence, independent review, CI, installed-app manual acceptance and real-model acceptance remain open. | Do not claim the local implementation as released or fully accepted. |
 
 ???active
 ?????2026-07-19

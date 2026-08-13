@@ -238,4 +238,37 @@ describe("desktop governed agent flow", () => {
     expect(aborted).toBe(true);
     expect(store.listTraces("run-cancel").map((trace) => trace.type)).toEqual(["run_cancelled"]);
   });
+
+  it("aborts an approved configured command when the desktop run is cancelled", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-command-cancel-"));
+    temporaryDirectories.push(workspaceRoot);
+    const now = "2026-08-12T12:00:00.000Z";
+    const store = new FakeStore(
+      { projectId: "project-command-cancel", workspaceRoot, displayName: "node-fixture", profileJson: "{}", createdAt: now, updatedAt: now },
+      { configId: "model-command-cancel", projectId: "project-command-cancel", baseUrl: "https://example.invalid/v1", model: "mock-model", parametersJson: "{}", createdAt: now, updatedAt: now },
+      { commandId: "test", projectId: "project-command-cancel", purpose: "test", argv: ["node", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000, confirmedByUser: true },
+    );
+    let aborted = false;
+    const host = { store, readLlmConfiguration: async () => ({ baseUrl: "https://example.invalid/v1", model: "mock-model", apiKey: API_KEY }) } as unknown as WorkspaceHost;
+    const commandRunner: CommandRunner = {
+      run: async (_input, signal) => new Promise<CommandExecution>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => { aborted = true; reject(new Error("aborted")); }, { once: true });
+      }),
+    };
+    const service = new DesktopRunService({
+      host,
+      completionClientFactory: () => new ScriptedCompletionClient([JSON.stringify({ tool: "run_configured_command", commandId: "test" })]),
+      commandRunner,
+      now: () => new Date(now),
+      idFactory: (() => { let index = 0; return () => `command-cancel-${++index}`; })(),
+    });
+
+    const pending = await service.start({ projectId: "project-command-cancel", task: "run test", modelConfigId: "model-command-cancel" });
+    const deciding = service.decideApproval({ runId: pending.run.runId, approvalId: pending.pendingApproval!.approvalId, decision: "once" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    service.cancel(pending.run.runId);
+
+    await expect(deciding).resolves.toMatchObject({ run: { status: "cancelled", stopReason: "cancelled" } });
+    expect(aborted).toBe(true);
+  });
 });

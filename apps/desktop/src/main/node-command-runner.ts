@@ -32,7 +32,7 @@ export class NodeCommandRunner implements CommandRunner {
     this.maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   }
 
-  run(input: { readonly argv: readonly string[]; readonly workingDirectory: string; readonly timeoutMs: number }): Promise<CommandExecution> {
+  run(input: { readonly argv: readonly string[]; readonly workingDirectory: string; readonly timeoutMs: number }, signal?: AbortSignal): Promise<CommandExecution> {
     const [command, ...args] = input.argv;
     if (!command) {
       return Promise.resolve(emptyExecution("command_not_found"));
@@ -56,12 +56,16 @@ export class NodeCommandRunner implements CommandRunner {
       };
       const finish = (exitCode: number | null, condition: CommandExecution["condition"]) => {
         clearTimeout(timeout);
+        signal?.removeEventListener("abort", abort);
         resolve({ exitCode, durationMs: Date.now() - startedAt, stdout, stderr, condition });
       };
+      const abort = () => child.kill();
       const timeout = setTimeout(() => {
         timedOut = true;
         child.kill();
       }, input.timeoutMs);
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
       child.stdout?.on("data", (chunk: Buffer | string) => { stdout = append(stdout, chunk); });
       child.stderr?.on("data", (chunk: Buffer | string) => { stderr = append(stderr, chunk); });
       child.once("error", (error: NodeJS.ErrnoException) => {

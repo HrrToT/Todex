@@ -28,7 +28,7 @@ export interface CommandRunner {
     readonly argv: readonly string[];
     readonly workingDirectory: string;
     readonly timeoutMs: number;
-  }): Promise<CommandExecution>;
+  }, signal?: AbortSignal): Promise<CommandExecution>;
 }
 
 export interface ConfiguredCommandRegistry {

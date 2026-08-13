@@ -116,6 +116,7 @@ export class AgentRunner {
   cancel(runId: string): void {
     this.cancelledRuns.add(runId);
     this.llm.cancel?.(runId);
+    this.dispatcher.cancel?.(runId);
   }
 
   async run(input: RunInput): Promise<RunResult> {

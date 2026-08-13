@@ -30,6 +30,7 @@ export interface ToolDispatcher {
     action: Action,
     context: { runId: string; actionId: string; projectId: string },
   ): Promise<ToolResult>;
+  cancel?(runId: string): void;
 }
 
 export interface RunInput {
