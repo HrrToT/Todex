@@ -761,7 +761,8 @@ interactive visual acceptance.
 - [x] Remaining live-workbench setup labels, notices, candidate confirmation and accessibility text use the `zh-CN` / `en-US` catalog; argv, paths, diffs, JSON and trace type evidence remain literal.
 - [x] Pre-merge security rework removes Renderer/IPC API-key capture and arbitrary memory writes, redacts an active credential value before task/trace persistence, passes a user-confirmed verification command from the live workbench, and returns `completed_unverified` whenever no verification runner exists.
 - [x] Pre-merge robustness rework rolls back ordinary multi-file Node workspace write failures and removes sender-scoped run subscriptions when an Electron renderer is destroyed or cannot receive updates.
-- [ ] Independent specification/security review, GitHub CI, and Windows installed-app manual acceptance remain required before release.
+- [x] PR [#19](https://github.com/HrrToT/Todex/pull/19) merged into `main` as `f9dcd3a8368b32fb14418bb1e05dcdc1e20ada61`; its CI run [31708987042](https://github.com/HrrToT/Todex/actions/runs/31708987042) passed against the final PR head `bc405e38b5220640d5fa92948ad0e90c527699f9`.
+- [ ] Independent specification/security review, Windows installed-app manual acceptance, and scoped real-model acceptance remain required before a T-013 release claim.
 - [ ] Local complete Vitest evidence remains blocked by missing `better-sqlite3` Node ABI 137 binding under Node 24.14.0; do not suppress the existing SQLite/WorkspaceHost tests.
 
 ????????????????????????????????????????????????????????????????

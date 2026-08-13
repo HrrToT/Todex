@@ -140,7 +140,18 @@ git diff --check
 
 ## Remaining Evidence Boundary
 
-No actual external model request, real API key, user repository mutation, real command, installed Windows Electron interaction, external Mock HTTP server fixture, PR, CI, or release was claimed by this record. The local Node 24 runtime cannot load the missing `better-sqlite3` ABI 137 binding, so the existing SQLite/WorkspaceHost suite and the new locale reopen test require Windows Node 20 CI evidence. This environment limitation is not suppressed or counted as a passing local native test.
+PR [#19](https://github.com/HrrToT/Todex/pull/19) was merged into `main` at
+`2026-08-13T14:43:33Z` as `f9dcd3a8368b32fb14418bb1e05dcdc1e20ada61`.
+The final PR head `bc405e38b5220640d5fa92948ad0e90c527699f9` is an ancestor of that
+merge commit. GitHub Actions [run 31708987042](https://github.com/HrrToT/Todex/actions/runs/31708987042)
+passed for the final PR head.
+
+This integration evidence does not establish an actual external model request, live API key use,
+user repository mutation, real command execution, installed Windows Electron interaction, or
+scoped real-model acceptance. The local Node 24 runtime cannot load the missing
+`better-sqlite3` ABI 137 binding, so the existing SQLite/WorkspaceHost suite and the locale
+reopen test still require compatible Windows/CI evidence. This environment limitation is not
+suppressed or counted as a passing local native test.
 
 ## Pre-merge Security Rework (2026-08-13)
 

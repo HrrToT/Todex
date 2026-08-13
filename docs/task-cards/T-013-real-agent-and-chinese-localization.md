@@ -1,6 +1,6 @@
 # T-013: 真实桌面 Agent 与中文适配
 
-状态：implemented_locally_pending_review
+状态：integrated_pending_manual_acceptance
 
 权威设计：[`2026-08-12-t-013-real-agent-and-chinese-localization-design.md`](../superpowers/specs/2026-08-12-t-013-real-agent-and-chinese-localization-design.md)。
 
@@ -45,3 +45,13 @@ Node.js/Python 仓库、确认候选命令、配置 OpenAI Chat Completions 兼�
 `packages/harness-core/**`（仅当实现缺少适配接口且由测试证明必要）、`README.md`、
 `docs/PLAN.md`、`docs/AGENT_LOG.md`、`docs/task-cards/T-013-*`、
 `docs/verification/*t-013*`。不得修改 Demo HTTP 安全边界以接收真实输入。
+
+## 集成状态（2026-08-13）
+
+- PR [#19](https://github.com/HrrToT/Todex/pull/19) 已合并到 `main`，合并提交为
+  `f9dcd3a8368b32fb14418bb1e05dcdc1e20ada61`，其中包含已验证的 PR head
+  `bc405e38b5220640d5fa92948ad0e90c527699f9`。
+- 该 PR 的 GitHub Actions CI 已通过：
+  https://github.com/HrrToT/Todex/actions/runs/31708987042
+- 本卡不因此宣称最终发布或人工验收完成。Windows 已安装应用交互验收与在用户选择的
+  非敏感仓库上进行真实模型验收仍是开放证据项；Render 公共 Demo 仍必须保持 Mock-only。
