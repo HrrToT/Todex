@@ -1,5 +1,3 @@
-import { basename } from "node:path";
-
 export interface DirectoryDialog {
   showOpenDialog(options: { properties: ["openDirectory"] }): Promise<{
     canceled: boolean;
@@ -26,6 +24,10 @@ export class WorkspaceSelector {
     if (selection.canceled || selectedPath === undefined) return undefined;
 
     const workspaceRoot = await this.dependencies.realpath(selectedPath);
-    return { workspaceRoot, displayName: basename(workspaceRoot) };
+    return { workspaceRoot, displayName: displayNameForPath(workspaceRoot) };
   }
+}
+
+function displayNameForPath(path: string): string {
+  return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? path;
 }

@@ -21,4 +21,13 @@ describe("WorkspaceSelector", () => {
 
     await expect(selector.choose()).resolves.toBeUndefined();
   });
+
+  it("derives display names from Unix separators when running on Windows paths", async () => {
+    const selector = new WorkspaceSelector({
+      showOpenDialog: vi.fn().mockResolvedValue({ canceled: false, filePaths: ["/picked/python"] }),
+      realpath: vi.fn().mockResolvedValue("/fixtures/python"),
+    });
+
+    await expect(selector.choose()).resolves.toEqual({ workspaceRoot: "/fixtures/python", displayName: "python" });
+  });
 });
