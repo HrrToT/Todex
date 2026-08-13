@@ -115,6 +115,33 @@ describe("desktop governed agent flow", () => {
     expect(service.snapshot("background-run")?.run.status).toBe("completed");
   });
 
+  it("persists a stable failed snapshot when a background run hits an unexpected service error", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-background-failure-"));
+    temporaryDirectories.push(workspaceRoot);
+    const now = "2026-08-13T00:00:00.000Z";
+    const store = new FakeStore(
+      { projectId: "project-background-failure", workspaceRoot, displayName: "node-fixture", profileJson: "{}", createdAt: now, updatedAt: now },
+      { configId: "model-background-failure", projectId: "project-background-failure", baseUrl: "https://example.invalid/v1", model: "mock-model", parametersJson: "{}", createdAt: now, updatedAt: now },
+      { commandId: "test", projectId: "project-background-failure", purpose: "test", argv: ["node", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000, confirmedByUser: true },
+    );
+    let projectReads = 0;
+    const originalGetProject = store.getProject.bind(store);
+    store.getProject = (projectId: string) => {
+      projectReads += 1;
+      return projectReads === 1 ? originalGetProject(projectId) : undefined;
+    };
+    const host = { store, readLlmConfiguration: async () => ({ baseUrl: "https://example.invalid/v1", model: "mock-model", apiKey: API_KEY }) } as unknown as WorkspaceHost;
+    const service = new DesktopRunService({ host, now: () => new Date(now), idFactory: () => "background-failure-run" });
+    const updates: string[] = [];
+    service.subscribe((snapshot) => updates.push(snapshot.run.status));
+
+    await expect(service.startBackground({ projectId: "project-background-failure", task: "wait", modelConfigId: "model-background-failure" })).resolves.toMatchObject({ run: { status: "running" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(service.snapshot("background-failure-run")?.run).toMatchObject({ status: "failed", stopReason: "desktop_run_failed" });
+    expect(updates).toEqual(["running", "failed"]);
+  });
+
   it("completes a governed Node fixture loop through a local Chat Completions HTTP boundary", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-http-e2e-"));
     temporaryDirectories.push(workspaceRoot);
@@ -318,6 +345,31 @@ describe("desktop governed agent flow", () => {
     expect(JSON.stringify(result)).not.toContain("not JSON");
   });
 
+  it("redacts a schema-valid model finish summary before trace persistence and projection", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-summary-redaction-"));
+    temporaryDirectories.push(workspaceRoot);
+    const now = "2026-08-13T00:00:00.000Z";
+    const store = new FakeStore(
+      { projectId: "project-summary-redaction", workspaceRoot, displayName: "node-fixture", profileJson: "{}", createdAt: now, updatedAt: now },
+      { configId: "model-summary-redaction", projectId: "project-summary-redaction", baseUrl: "https://example.invalid/v1", model: "mock-model", parametersJson: "{}", createdAt: now, updatedAt: now },
+      { commandId: "test", projectId: "project-summary-redaction", purpose: "test", argv: ["node", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000, confirmedByUser: true },
+    );
+    const host = { store, readLlmConfiguration: async () => ({ baseUrl: "https://example.invalid/v1", model: "mock-model", apiKey: API_KEY }) } as unknown as WorkspaceHost;
+    const service = new DesktopRunService({
+      host,
+      completionClientFactory: () => new ScriptedCompletionClient([JSON.stringify({ tool: "finish", summary: "API_KEY=leaked-value at C:\\Users\\Lenovo\\private-repo", completion: "verified" })]),
+      now: () => new Date(now),
+      idFactory: () => "summary-redaction-run",
+    });
+
+    const result = await service.start({ projectId: "project-summary-redaction", task: "finish", modelConfigId: "model-summary-redaction" });
+
+    expect(JSON.stringify(result)).not.toContain("leaked-value");
+    expect(JSON.stringify(result)).not.toContain("C:\\Users\\Lenovo");
+    expect(JSON.stringify(store.listTraces("summary-redaction-run"))).not.toContain("leaked-value");
+    expect(JSON.stringify(store.listTraces("summary-redaction-run"))).not.toContain("C:\\Users\\Lenovo");
+  });
+
   it("rejects a second active run for the same project", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-active-"));
     temporaryDirectories.push(workspaceRoot);
@@ -413,5 +465,30 @@ describe("desktop governed agent flow", () => {
 
     await expect(deciding).resolves.toMatchObject({ run: { status: "cancelled", stopReason: "cancelled" } });
     expect(aborted).toBe(true);
+  });
+
+  it("cancels an awaiting approval immediately and releases the project run lock", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-pending-cancel-"));
+    temporaryDirectories.push(workspaceRoot);
+    const now = "2026-08-13T00:00:00.000Z";
+    const store = new FakeStore(
+      { projectId: "project-pending-cancel", workspaceRoot, displayName: "node-fixture", profileJson: "{}", createdAt: now, updatedAt: now },
+      { configId: "model-pending-cancel", projectId: "project-pending-cancel", baseUrl: "https://example.invalid/v1", model: "mock-model", parametersJson: "{}", createdAt: now, updatedAt: now },
+      { commandId: "test", projectId: "project-pending-cancel", purpose: "test", argv: ["node", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000, confirmedByUser: true },
+    );
+    const host = { store, readLlmConfiguration: async () => ({ baseUrl: "https://example.invalid/v1", model: "mock-model", apiKey: API_KEY }) } as unknown as WorkspaceHost;
+    const service = new DesktopRunService({
+      host,
+      completionClientFactory: () => new ScriptedCompletionClient([JSON.stringify({ tool: "run_configured_command", commandId: "test" })]),
+      now: () => new Date(now),
+      idFactory: () => "pending-cancel-run",
+    });
+
+    const pending = await service.start({ projectId: "project-pending-cancel", task: "test", modelConfigId: "model-pending-cancel" });
+    service.cancel(pending.run.runId);
+
+    expect(service.snapshot(pending.run.runId)?.run).toMatchObject({ status: "cancelled", stopReason: "cancelled" });
+    expect(store.approvals.at(-1)).toMatchObject({ state: "cancelled" });
+    await expect(service.start({ projectId: "project-pending-cancel", task: "test again", modelConfigId: "model-pending-cancel" })).resolves.toMatchObject({ run: { status: "awaiting_approval" } });
   });
 });

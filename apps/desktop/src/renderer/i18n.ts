@@ -51,6 +51,10 @@ export type MessageKey =
   | "phase.awaitingApproval"
   | "phase.failed"
   | "phase.completed"
+  | "phase.completedUnverified"
+  | "phase.failedRepairLimit"
+  | "phase.failedEnvironment"
+  | "phase.cancelled"
   | "demo.readyForTask"
   | "demo.streamWillAppear"
   | "demo.withheldTask"
@@ -121,6 +125,10 @@ const messages: Readonly<Record<Locale, Messages>> = Object.freeze({
     "phase.awaitingApproval": "等待审批",
     "phase.failed": "失败",
     "phase.completed": "已完成",
+    "phase.completedUnverified": "已完成，未验证",
+    "phase.failedRepairLimit": "修复次数已达上限",
+    "phase.failedEnvironment": "环境失败",
+    "phase.cancelled": "已取消",
     "demo.readyForTask": "等待任务",
     "demo.streamWillAppear": "运行过程会显示在这里。",
     "demo.withheldTask": "已隐藏敏感任务内容",
@@ -187,6 +195,10 @@ const messages: Readonly<Record<Locale, Messages>> = Object.freeze({
     "phase.awaitingApproval": "Awaiting approval",
     "phase.failed": "Failed",
     "phase.completed": "Completed",
+    "phase.completedUnverified": "Completed unverified",
+    "phase.failedRepairLimit": "Repair limit reached",
+    "phase.failedEnvironment": "Environment failed",
+    "phase.cancelled": "Cancelled",
     "demo.readyForTask": "Ready for a task",
     "demo.streamWillAppear": "The run stream will appear here.",
     "demo.withheldTask": "Sensitive task content withheld",

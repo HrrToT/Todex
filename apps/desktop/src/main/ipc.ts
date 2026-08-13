@@ -75,7 +75,7 @@ export function registerTodexIpc(
   workspaceSelector?: Pick<WorkspaceSelector, "choose">,
   runService?: DesktopRunService,
 ): void {
-  const runSubscriptions = new Map<string, () => void>();
+  const runSubscriptions = new Map<NonNullable<IpcEventLike["sender"]>, Map<string, () => void>>();
   register(ipcMain, "workspace.choose", emptySchema, async () => {
     const selected = await workspaceSelector?.choose();
     return selected ? Object.freeze({ displayName: selected.displayName }) : undefined;
@@ -146,17 +146,23 @@ export function registerTodexIpc(
     if (!runService) throw new Error("host_operation_failed");
     const sender = (event as IpcEventLike).sender;
     if (!sender) throw new Error("host_operation_failed");
-    runSubscriptions.get(input.runId)?.();
-    runSubscriptions.set(input.runId, runService.subscribe((snapshot) => {
+    const senderSubscriptions = runSubscriptions.get(sender) ?? new Map<string, () => void>();
+    senderSubscriptions.get(input.runId)?.();
+    senderSubscriptions.set(input.runId, runService.subscribe((snapshot) => {
       if (snapshot.run.runId === input.runId) sender.send("run.update", runProjection(snapshot));
     }));
+    runSubscriptions.set(sender, senderSubscriptions);
     const current = runService.snapshot(input.runId);
     if (current) sender.send("run.update", runProjection(current));
     return { subscribed: true };
   });
-  register(ipcMain, "run.unsubscribe", runIdSchema, (input) => {
-    runSubscriptions.get(input.runId)?.();
-    runSubscriptions.delete(input.runId);
+  register(ipcMain, "run.unsubscribe", runIdSchema, (input, event) => {
+    const sender = (event as IpcEventLike).sender;
+    if (!sender) throw new Error("host_operation_failed");
+    const senderSubscriptions = runSubscriptions.get(sender);
+    senderSubscriptions?.get(input.runId)?.();
+    senderSubscriptions?.delete(input.runId);
+    if (senderSubscriptions?.size === 0) runSubscriptions.delete(sender);
     return { subscribed: false };
   });
 

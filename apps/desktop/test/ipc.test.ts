@@ -224,9 +224,13 @@ describe("desktop IPC", () => {
 
   it("subscribes only to redacted background run updates", async () => {
     const ipcMain = new FakeIpcMain();
-    const listeners: Array<(snapshot: unknown) => void> = [];
+    const listeners: Array<{ active: boolean; listener: (snapshot: unknown) => void }> = [];
     const service = {
-      subscribe: vi.fn((listener: (snapshot: unknown) => void) => { listeners.push(listener); return () => undefined; }),
+      subscribe: vi.fn((listener: (snapshot: unknown) => void) => {
+        const entry = { active: true, listener };
+        listeners.push(entry);
+        return () => { entry.active = false; };
+      }),
       snapshot: vi.fn(() => ({
         run: { runId: "run-1", projectId: "p1", taskText: "API_KEY=secret-value", status: "running", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
         trace: [], results: [],
@@ -241,12 +245,12 @@ describe("desktop IPC", () => {
       run: expect.objectContaining({ runId: "run-1", status: "running" }),
     }));
     send.mockClear();
-    listeners[0]?.({
+    listeners[0]?.listener({
       run: { runId: "another-run", projectId: "p1", taskText: "API_KEY=secret-value", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
       trace: [], results: [],
     });
     expect(send).not.toHaveBeenCalled();
-    listeners[0]?.({
+    listeners[0]?.listener({
       run: { runId: "run-1", projectId: "p1", taskText: "API_KEY=secret-value", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
       trace: [], results: [],
     });
@@ -254,6 +258,36 @@ describe("desktop IPC", () => {
     expect(send).toHaveBeenCalledWith("run.update", expect.objectContaining({ run: expect.objectContaining({ runId: "run-1", status: "completed" }) }));
     expect(JSON.stringify(send.mock.calls)).not.toContain("secret-value");
     expect(JSON.stringify(send.mock.calls)).not.toContain("taskText");
+  });
+
+  it("keeps matching run subscriptions independent for separate renderer senders", async () => {
+    const ipcMain = new FakeIpcMain();
+    const listeners: Array<{ active: boolean; listener: (snapshot: unknown) => void }> = [];
+    const service = {
+      subscribe: vi.fn((listener: (snapshot: unknown) => void) => {
+        const entry = { active: true, listener };
+        listeners.push(entry);
+        return () => { entry.active = false; };
+      }),
+      snapshot: vi.fn(() => undefined),
+    } as unknown as DesktopRunService;
+    const host = { store: {} };
+    const firstSend = vi.fn();
+    const secondSend = vi.fn();
+    registerTodexIpc(ipcMain, host as never, undefined, service);
+
+    await ipcMain.handlers.get("run.subscribe")?.({ sender: { send: firstSend } }, { runId: "run-1" });
+    await ipcMain.handlers.get("run.subscribe")?.({ sender: { send: secondSend } }, { runId: "run-1" });
+    for (const entry of listeners) {
+      if (!entry.active) continue;
+      entry.listener({
+        run: { runId: "run-1", projectId: "p1", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
+        trace: [], results: [],
+      });
+    }
+
+    expect(firstSend).toHaveBeenCalledWith("run.update", expect.objectContaining({ run: { runId: "run-1", projectId: "p1", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 } }));
+    expect(secondSend).toHaveBeenCalledWith("run.update", expect.objectContaining({ run: { runId: "run-1", projectId: "p1", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 } }));
   });
 
   it("keeps task text and credential references out of all renderer query projections", async () => {

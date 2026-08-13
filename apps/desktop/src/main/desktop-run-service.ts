@@ -59,6 +59,10 @@ const ACTION_SYSTEM_PROMPT = [
 
 const FORMAT_REPAIR_SYSTEM_PROMPT = "Return one valid Todex JSON Action only. Do not use tools or add prose.";
 const FORMAT_REPAIR_USER_PROMPT = "Your previous response was not a valid Todex JSON Action. Return a valid JSON Action now.";
+const MAX_PROJECTED_TEXT_LENGTH = 2_000;
+const SENSITIVE_VALUE_PATTERN = /((?:api[_-]?key|secret|token|password|credential|private[_-]?key)\s*[=:]\s*)[^\s,;\r\n]+/gi;
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /[A-Za-z]:[\\/][^\s\r\n]*/g;
+const UNIX_ABSOLUTE_PATH_PATTERN = /(?<![a-zA-Z0-9_.-])(\/[^\s\r\n]*)/g;
 
 export function createProtocolRepairingLlm(client: CompletionClient): LlmClient {
   const controllers = new Map<string, AbortController>();
@@ -206,10 +210,11 @@ export class DesktopRunService {
       if (!project) throw new Error("project_not_found");
       const result = await runner.run({ runId, projectId, task: input.task, workspaceRoot: project.workspaceRoot });
       return this.persistSnapshot(runId, result.status, result.stopReason, result.results, result.pendingApproval);
-    } catch (error) {
+    } catch {
       this.active.delete(runId);
       this.activeProjects.delete(projectId);
-      throw error;
+      const prior = this.snapshots.get(runId);
+      return this.persistSnapshot(runId, "failed", "desktop_run_failed", prior?.results ?? []);
     }
   }
 
@@ -221,7 +226,18 @@ export class DesktopRunService {
   }
 
   cancel(runId: string): void {
-    this.active.get(runId)?.cancel(runId);
+    const runner = this.active.get(runId);
+    runner?.cancel(runId);
+    const pending = this.snapshots.get(runId);
+    if (pending?.run.status !== "awaiting_approval") return;
+    if (pending.pendingApproval) {
+      this.host.store.saveApproval({
+        ...pending.pendingApproval,
+        state: "cancelled",
+        decidedAt: this.now().toISOString(),
+      });
+    }
+    this.persistSnapshot(runId, "cancelled", "cancelled", pending.results);
   }
 
   snapshot(runId: string): DesktopRunSnapshot | undefined {
@@ -255,7 +271,7 @@ class PersistedTraceStore implements TraceStore {
   append(input: { readonly runId: string; readonly type: TraceEvent["type"]; readonly payloadSummary: string }): TraceEvent {
     const sequence = this.sequence.get(input.runId) ?? this.host.store.listTraces(input.runId).length;
     this.sequence.set(input.runId, sequence + 1);
-    return this.host.store.appendTrace({ eventId: `${input.runId}-${sequence}`, ...input, sequence, timestamp: this.now().toISOString() });
+    return this.host.store.appendTrace({ eventId: `${input.runId}-${sequence}`, ...input, payloadSummary: redactProjectedText(input.payloadSummary), sequence, timestamp: this.now().toISOString() });
   }
   list(runId: string): readonly TraceEvent[] { return this.host.store.listTraces(runId); }
 }
@@ -310,7 +326,15 @@ function commandResult(actionId: string, outcome: CommandExecution): ToolResult 
   return { resultId: `${actionId}-result`, actionId, status: outcome.condition === "success" ? "succeeded" : "failed", summary: `command ${outcome.condition}` };
 }
 function failedResult(actionId: string, summary: string): ToolResult { return { resultId: `${actionId}-result`, actionId, status: "failed", summary }; }
-function cloneSnapshot(snapshot: DesktopRunSnapshot): DesktopRunSnapshot { return { run: { ...snapshot.run }, trace: [...snapshot.trace], results: [...snapshot.results], ...(snapshot.pendingApproval ? { pendingApproval: { ...snapshot.pendingApproval, riskReasons: [...snapshot.pendingApproval.riskReasons] } } : {}) }; }
+function cloneSnapshot(snapshot: DesktopRunSnapshot): DesktopRunSnapshot { return { run: { ...snapshot.run }, trace: snapshot.trace.map((event) => ({ ...event, payloadSummary: redactProjectedText(event.payloadSummary) })), results: snapshot.results.map((result) => ({ ...result, summary: redactProjectedText(result.summary) })), ...(snapshot.pendingApproval ? { pendingApproval: { ...snapshot.pendingApproval, riskReasons: snapshot.pendingApproval.riskReasons.map(redactProjectedText) } } : {}) }; }
+
+function redactProjectedText(value: string): string {
+  return value
+    .replace(SENSITIVE_VALUE_PATTERN, "$1[REDACTED]")
+    .replace(WINDOWS_ABSOLUTE_PATH_PATTERN, "[REDACTED_PATH]")
+    .replace(UNIX_ABSOLUTE_PATH_PATTERN, "[REDACTED_PATH]")
+    .slice(0, MAX_PROJECTED_TEXT_LENGTH);
+}
 
 function tryParseAction(raw: string): Action | undefined {
   try {

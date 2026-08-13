@@ -158,6 +158,31 @@ describe("Codex-style workbench", () => {
     }
   });
 
+  it("renders terminal live run status with localized text and its real visual phase", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => ({ run: { runId: "run-complete", status: "completed" }, trace: [] }), snapshot: async () => undefined, cancel: async () => undefined, subscribe: () => () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [{ projectId: "p-live", displayName: "node-fixture", profile: { kinds: [], candidates: [], notices: [] } }] },
+        model: { list: async () => [{ configId: "m-live", baseUrl: "https://example.invalid/v1", model: "mock-model" }], save: async () => ({ configId: "m-live", baseUrl: "https://example.invalid/v1", model: "mock-model" }) },
+        credential: { status: async () => ({ configured: true, availability: "available" }), save: async () => ({ configured: true }) },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await user.type(screen.getByRole("textbox", { name: "Task or continuation" }), "Inspect the fixture");
+      await user.click(screen.getByRole("button", { name: "Run" }));
+
+      expect(screen.getByText("Completed")).toBeVisible();
+      expect(document.querySelector(".phase-completed")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Stop run" })).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
   it("confirms a detector candidate by id without exposing a working directory", async () => {
     const user = userEvent.setup();
     const confirmations: Array<[string, string]> = [];

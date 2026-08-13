@@ -23,7 +23,7 @@ import {
   type WorkbenchSnapshot,
 } from "./run-controller.js";
 import { preloadRunBridge, type ApprovalBridge, type DesktopCommandCandidate, type DesktopProjectProjection } from "./bridge.js";
-import { t, type Locale } from "./i18n.js";
+import { t, type Locale, type MessageKey } from "./i18n.js";
 import "./styles.css";
 
 function tabs(locale: Locale): ReadonlyArray<{ id: InspectorTab; label: string }> {
@@ -198,6 +198,21 @@ type DesktopProject = DesktopProjectProjection;
 interface DesktopModel { readonly configId: string; readonly baseUrl: string; readonly model: string; }
 interface LiveSnapshot { readonly run: { readonly runId: string; readonly status: string }; readonly trace: readonly { readonly eventId: string; readonly type: string; readonly payloadSummary: string }[]; readonly pendingApproval?: { readonly approvalId: string }; }
 
+function livePhase(status: string | undefined): { readonly className: string; readonly labelKey: MessageKey } {
+  switch (status) {
+    case "created":
+    case "running":
+    case "dispatching": return { className: "running", labelKey: "phase.running" };
+    case "awaiting_approval": return { className: "awaiting_approval", labelKey: "phase.awaitingApproval" };
+    case "completed": return { className: "completed", labelKey: "phase.completed" };
+    case "completed_unverified": return { className: "completed", labelKey: "phase.completedUnverified" };
+    case "failed_repair_limit": return { className: "failed", labelKey: "phase.failedRepairLimit" };
+    case "failed_environment": return { className: "failed", labelKey: "phase.failedEnvironment" };
+    case "cancelled": return { className: "failed", labelKey: "phase.cancelled" };
+    default: return { className: "failed", labelKey: "phase.failed" };
+  }
+}
+
 function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggleLocale: () => void }): JSX.Element {
   const surface = window.todex!;
   const [projects, setProjects] = useState<readonly DesktopProject[]>([]);
@@ -212,6 +227,7 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   const [snapshot, setSnapshot] = useState<LiveSnapshot>();
   const [noticeKey, setNoticeKey] = useState<"live.notice.chooseWorkspaceAndModel" | "live.notice.modelReady" | "live.notice.enterApiKey" | "live.notice.commandConfirmed" | "live.notice.completeSetup" | "live.notice.runUpdated">("live.notice.chooseWorkspaceAndModel");
   const notice = t(locale, noticeKey);
+  const phase = livePhase(snapshot?.run.status);
 
   useEffect(() => {
     if (!snapshot?.run.runId || !surface.run?.subscribe) return undefined;
@@ -275,7 +291,7 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
       <section className="rail-section"><p>{t(locale, "live.modelConfiguration")}</p><label>Base URL<input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.example.com/v1" /></label><label>{t(locale, "live.model")}<input value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="model-name" /></label><label>{t(locale, "live.apiKey")}<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={t(locale, "live.apiKeyPlaceholder")} /></label><button className="run-row selected" type="button" onClick={() => void saveModel()}>{t(locale, "live.saveModelConfiguration")}</button></section>
       <nav className="rail-nav">{projects.map((item) => <button key={item.projectId} type="button" onClick={() => void chooseProject(item)}><FolderKanban size={16} /><span>{item.displayName}</span></button>)}{models.map((item) => <button key={item.configId} type="button" onClick={() => void chooseModel(item)}><Command size={16} /><span>{item.model}</span></button>)}</nav>
     </aside>
-    <section className="execution-area"><header className="stream-header"><div><span className="eyebrow">{t(locale, "workbench.workspace")}</span><h1>{project?.displayName ?? t(locale, "live.noWorkspaceSelected")}</h1></div><div className={`phase phase-${snapshot?.run.status === "awaiting_approval" ? "awaiting_approval" : snapshot ? "running" : "idle"}`}><span />{snapshot?.run.status ?? "idle"}</div>{snapshot?.run.status === "running" ? <button className="icon-button" type="button" aria-label={t(locale, "live.stopRun")} title={t(locale, "live.stopRun")} onClick={() => void surface.run?.cancel(snapshot.run.runId)}><X size={17} aria-hidden="true" /></button> : null}</header>
+    <section className="execution-area"><header className="stream-header"><div><span className="eyebrow">{t(locale, "workbench.workspace")}</span><h1>{project?.displayName ?? t(locale, "live.noWorkspaceSelected")}</h1></div><div className={`phase phase-${phase.className}`}><span />{t(locale, phase.labelKey)}</div>{snapshot && (snapshot.run.status === "running" || snapshot.run.status === "awaiting_approval" || snapshot.run.status === "dispatching") ? <button className="icon-button" type="button" aria-label={t(locale, "live.stopRun")} title={t(locale, "live.stopRun")} onClick={() => void surface.run?.cancel(snapshot.run.runId)}><X size={17} aria-hidden="true" /></button> : null}</header>
       <div className="stream-scroll"><div className="execution-stream"><p className="inspector-kicker">{notice}</p>{candidates.map((candidate) => <section className="stream-event" key={candidate.candidateId}><span className="event-icon">{eventIcon("tool")}</span><span className="event-content"><strong>{candidate.purpose}</strong><span>{candidate.argv.join(" ")}</span></span><button type="button" onClick={() => void confirmCandidate(candidate.candidateId)}>{t(locale, "live.confirmCandidate")}</button></section>)}{snapshot?.trace.map((event) => <div className="stream-event" key={event.eventId}><span className="event-icon">{eventIcon("agent")}</span><span className="event-content"><strong>{event.type}</strong><span>{event.payloadSummary}</span></span></div>)}</div></div>
       {snapshot?.pendingApproval ? <section className="approval-actions"><button type="button" onClick={() => void decide("once")}>{t(locale, "workbench.allowOnce")}</button><button type="button" onClick={() => void decide("run")}>{t(locale, "workbench.allowRun")}</button><button className="danger" type="button" onClick={() => void decide("deny")}>{t(locale, "workbench.deny")}</button></section> : null}
       <form className="task-composer" onSubmit={(event) => { event.preventDefault(); void start(); }}><label htmlFor="live-task">{t(locale, "workbench.task")}</label><textarea id="live-task" value={task} onChange={(event) => setTask(event.target.value)} rows={2} /><button className="send-button" type="submit" aria-label={t(locale, "workbench.run")}><Play size={15} /></button></form>

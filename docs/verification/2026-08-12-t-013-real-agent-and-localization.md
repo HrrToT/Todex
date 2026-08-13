@@ -54,7 +54,9 @@ and confirms that the password field is cleared after save.
   current snapshot, so a very fast terminal run cannot be missed between `start` and subscribe.
 - The main process filters every notification by its requested `runId`; the preload listener repeats
   that check before calling the renderer callback. IPC tests prove the replay excludes task text and
-  seeded secrets, and that another run's event is not sent to this subscription.
+  seeded secrets, and that another run's event is not sent to this subscription. A review rework also
+  makes the subscription registry sender-scoped: two Electron windows may subscribe to the same run
+  independently, and one window's unsubscribe no longer removes the other window's listener.
 - A running live workbench exposes a labelled stop icon. It invokes only `run.cancel(runId)` and the
   existing main-process cancellation path remains responsible for aborting model HTTP or a fixed
   approved command. No renderer process receives a child-process or filesystem capability.
@@ -72,6 +74,36 @@ pnpm.cmd lint
 pnpm.cmd build
 git diff --check
 # all exit 0
+```
+
+## Independent Review Rework (2026-08-13)
+
+An independent local review found five issues in the initial live-stream implementation. All were
+reproduced with focused RED tests and repaired before PR creation:
+
+- Background `execute()` failures now publish and persist a stable `failed` terminal snapshot with
+  the fixed, redacted reason `desktop_run_failed`; the background task is no longer silently left as
+  `running`.
+- Cancelling while `awaiting_approval` now cancels the pending approval record, clears the pending
+  projection, releases the per-project active-run lock and publishes `cancelled` immediately. The
+  live stop control is available for running, dispatching and awaiting-approval states.
+- Every persisted trace payload and every projected result/approval summary is redacted for
+  credential-shaped values and absolute Windows/Unix paths, and is limited to 2000 characters.
+  A valid model `finish.summary` containing a seeded key and `C:\\Users\\...` now cannot reach
+  the trace table or renderer projection.
+- Live status now maps all `RunStatus` values to localized text and correct visual phases; completed,
+  failed-environment, repair-limit and cancelled runs are not visually labelled as running.
+- Subscription ownership is sender-scoped, so independent Electron windows may observe the same Run
+  and may only unsubscribe their own listener.
+
+Focused rework verification:
+
+```powershell
+pnpm.cmd --filter @todex/desktop test --run ipc.test.ts desktop-agent-e2e.test.ts desktop-run-service.test.ts workbench.spec.tsx
+pnpm.cmd typecheck
+pnpm.cmd lint
+pnpm.cmd build
+git diff --check
 ```
 
 ## Review Rework Evidence (2026-08-13)
