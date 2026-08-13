@@ -1,4 +1,4 @@
-import { memoryEntrySchema, type ApprovalScope, type RunSession, type ToolResult, type TraceEvent } from "@todex/contracts";
+import { type ApprovalScope, type RunSession, type ToolResult, type TraceEvent } from "@todex/contracts";
 import { z } from "zod";
 
 import { randomUUID } from "node:crypto";
@@ -16,7 +16,11 @@ export interface IpcMainLike {
 }
 
 interface IpcEventLike {
-  readonly sender?: { send(channel: "run.update", payload: unknown): void };
+  readonly sender?: {
+    send(channel: "run.update", payload: unknown): void;
+    on?(event: "destroyed", listener: () => void): unknown;
+    isDestroyed?(): boolean;
+  };
 }
 
 export const TODexIpcChannels = [
@@ -40,10 +44,8 @@ export const TODexIpcChannels = [
   "approval.listPending",
   "approval.decide",
   "memory.list",
-  "memory.save",
   "memory.delete",
   "credential.status",
-  "credential.save",
   "credential.clear",
   "settings.getLocale",
   "settings.setLocale",
@@ -64,9 +66,6 @@ const runStartSchema = z.object({
 const runApprovalSchema = z.object({ runId: z.string().min(1).optional(), approvalId: z.string().min(1), decision: z.enum(["once", "run", "command_prefix", "deny"]) }).strict();
 const memoryIdSchema = z.object({ memoryId: z.string().min(1) }).strict();
 const credentialConfigSchema = z.object({ configId: z.string().min(1) }).strict();
-const credentialSaveSchema = z
-  .object({ configId: z.string().min(1), apiKey: z.string().min(1) })
-  .strict();
 const localeSchema = z.object({ locale: z.enum(["zh-CN", "en-US"]) }).strict();
 
 export function registerTodexIpc(
@@ -76,6 +75,11 @@ export function registerTodexIpc(
   runService?: DesktopRunService,
 ): void {
   const runSubscriptions = new Map<NonNullable<IpcEventLike["sender"]>, Map<string, () => void>>();
+  const clearSenderSubscriptions = (sender: NonNullable<IpcEventLike["sender"]>) => {
+    const subscriptions = runSubscriptions.get(sender);
+    for (const unsubscribe of subscriptions?.values() ?? []) unsubscribe();
+    runSubscriptions.delete(sender);
+  };
   register(ipcMain, "workspace.choose", emptySchema, async () => {
     const selected = await workspaceSelector?.choose();
     return selected ? Object.freeze({ displayName: selected.displayName }) : undefined;
@@ -146,14 +150,19 @@ export function registerTodexIpc(
     if (!runService) throw new Error("host_operation_failed");
     const sender = (event as IpcEventLike).sender;
     if (!sender) throw new Error("host_operation_failed");
+    if (sender.isDestroyed?.()) return { subscribed: false };
     const senderSubscriptions = runSubscriptions.get(sender) ?? new Map<string, () => void>();
+    if (!runSubscriptions.has(sender)) sender.on?.("destroyed", () => clearSenderSubscriptions(sender));
     senderSubscriptions.get(input.runId)?.();
     senderSubscriptions.set(input.runId, runService.subscribe((snapshot) => {
-      if (snapshot.run.runId === input.runId) sender.send("run.update", runProjection(snapshot));
+      if (snapshot.run.runId !== input.runId || sender.isDestroyed?.()) return;
+      try { sender.send("run.update", runProjection(snapshot)); } catch { clearSenderSubscriptions(sender); }
     }));
     runSubscriptions.set(sender, senderSubscriptions);
     const current = runService.snapshot(input.runId);
-    if (current) sender.send("run.update", runProjection(current));
+    if (current && !sender.isDestroyed?.()) {
+      try { sender.send("run.update", runProjection(current)); } catch { clearSenderSubscriptions(sender); }
+    }
     return { subscribed: true };
   });
   register(ipcMain, "run.unsubscribe", runIdSchema, (input, event) => {
@@ -189,16 +198,12 @@ export function registerTodexIpc(
   });
 
   register(ipcMain, "memory.list", projectIdSchema, (input) => host.store.listMemories(input.projectId));
-  register(ipcMain, "memory.save", memoryEntrySchema, (input) => host.store.saveMemory(input));
   register(ipcMain, "memory.delete", memoryIdSchema, (input) =>
     host.store.deleteMemory(input.memoryId, new Date().toISOString()),
   );
 
   register(ipcMain, "credential.status", credentialConfigSchema, (input) =>
     host.credentialStatus(input.configId),
-  );
-  register(ipcMain, "credential.save", credentialSaveSchema, (input) =>
-    host.saveCredential(input.configId, input.apiKey),
   );
   register(ipcMain, "credential.clear", credentialConfigSchema, (input) =>
     host.clearCredential(input.configId),

@@ -45,12 +45,10 @@ contextBridge.exposeInMainWorld("todex", {
   },
   memory: {
     list: (projectId: string) => invoke("memory.list", { projectId }),
-    save: (input: unknown) => invoke("memory.save", input),
     delete: (memoryId: string) => invoke("memory.delete", { memoryId }),
   },
   credential: {
     status: (configId: string) => invoke("credential.status", { configId }),
-    save: (configId: string, apiKey: string) => invoke("credential.save", { configId, apiKey }),
     clear: (configId: string) => invoke("credential.clear", { configId }),
   },
   settings: {

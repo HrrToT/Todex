@@ -20,7 +20,7 @@ describe("Codex-style workbench", () => {
         run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
         project: { importSelectedWorkspace: async () => undefined, list: async () => [] },
         model: { list: async () => [], save: async () => ({ configId: "m1", baseUrl: "https://example.invalid/v1", model: "test-model" }) },
-        credential: { status: async () => ({ configured: false, availability: "available" }), save: async () => ({ configured: true }) },
+        credential: { status: async () => ({ configured: false, availability: "available" }) },
       },
     });
 
@@ -29,7 +29,8 @@ describe("Codex-style workbench", () => {
     expect(screen.getByText("Base URL")).toBeVisible();
     expect(screen.getByPlaceholderText("https://api.example.com/v1")).toBeVisible();
     expect(screen.getByPlaceholderText("model-name")).toBeVisible();
-    expect(screen.getByPlaceholderText("Saved only to Credential Manager")).toBeVisible();
+    expect(screen.getByText("Save credentials in Credential Manager first")).toBeVisible();
+    expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
     expect(screen.queryByText("Ready for a task")).not.toBeInTheDocument();
     Object.defineProperty(window, "todex", { configurable: true, value: undefined });
   });
@@ -43,7 +44,7 @@ describe("Codex-style workbench", () => {
         run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
         project: { importSelectedWorkspace: async () => undefined, list: async () => [] },
         model: { list: async () => [], save: async () => ({ configId: "m1", baseUrl: "https://example.invalid/v1", model: "test-model" }) },
-        credential: { status: async () => ({ configured: false, availability: "available" }), save: async () => ({ configured: true }) },
+        credential: { status: async () => ({ configured: false, availability: "available" }) },
         settings: { getLocale: async () => ({ locale: "zh-CN" as const }), setLocale },
       },
     });
@@ -62,10 +63,10 @@ describe("Codex-style workbench", () => {
     }
   });
 
-  it("imports a workspace, saves a credential, starts a run, and decides the current approval", async () => {
+  it("imports a workspace, saves a model configuration, starts a run, and decides the current approval", async () => {
     const user = userEvent.setup();
     const savedModels: Array<{ configId: string; baseUrl: string; model: string }> = [];
-    const calls: { start: unknown[]; approval: unknown[]; credential: string[] } = { start: [], approval: [], credential: [] };
+    const calls: { start: unknown[]; approval: unknown[] } = { start: [], approval: [] };
     Object.defineProperty(window, "todex", {
       configurable: true,
       value: {
@@ -81,10 +82,12 @@ describe("Codex-style workbench", () => {
             return saved;
           },
         },
-        credential: {
-          status: async () => ({ configured: true, availability: "available" }),
-          save: async (_configId: string, apiKey: string) => { calls.credential.push(apiKey); return { configured: true }; },
+        command: {
+          list: async () => [{ commandId: "cmd-live", purpose: "test", confirmedByUser: true }],
+          confirm: async () => undefined,
+          remove: async () => undefined,
         },
+        credential: { status: async () => ({ configured: true, availability: "available" }) },
         run: {
           start: async (input: unknown) => {
             calls.start.push(input);
@@ -106,14 +109,17 @@ describe("Codex-style workbench", () => {
     await user.click(screen.getByRole("button", { name: "Select workspace" }));
     await user.type(screen.getByPlaceholderText("https://api.example.com/v1"), "https://example.invalid/v1");
     await user.type(screen.getByPlaceholderText("model-name"), "mock-model");
-    await user.type(screen.getByPlaceholderText("Saved only to Credential Manager"), "secret-value");
     await user.click(screen.getByRole("button", { name: "Save model configuration" }));
 
     await user.type(screen.getByRole("textbox", { name: "Task or continuation" }), "Repair the fixture");
     await user.click(screen.getByRole("button", { name: "Run" }));
 
-    expect(calls.credential).toEqual(["secret-value"]);
-    expect(calls.start).toEqual([{ projectId: "p-live", modelConfigId: "m-live", task: "Repair the fixture" }]);
+    expect(calls.start).toEqual([{
+      projectId: "p-live",
+      modelConfigId: "m-live",
+      task: "Repair the fixture",
+      verificationCommandId: "cmd-live",
+    }]);
     expect(screen.getByText("approval_requested")).toBeVisible();
     expect(screen.queryByDisplayValue("secret-value")).not.toBeInTheDocument();
 

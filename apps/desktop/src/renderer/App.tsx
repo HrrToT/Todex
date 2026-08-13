@@ -22,7 +22,7 @@ import {
   type StreamEvent,
   type WorkbenchSnapshot,
 } from "./run-controller.js";
-import { preloadRunBridge, type ApprovalBridge, type DesktopCommandCandidate, type DesktopProjectProjection } from "./bridge.js";
+import { preloadRunBridge, type ApprovalBridge, type DesktopCommandCandidate, type DesktopConfiguredCommand, type DesktopProjectProjection } from "./bridge.js";
 import { t, type Locale, type MessageKey } from "./i18n.js";
 import "./styles.css";
 
@@ -218,11 +218,11 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   const [projects, setProjects] = useState<readonly DesktopProject[]>([]);
   const [project, setProject] = useState<DesktopProject>();
   const [candidates, setCandidates] = useState<readonly DesktopCommandCandidate[]>([]);
+  const [commands, setCommands] = useState<readonly DesktopConfiguredCommand[]>([]);
   const [models, setModels] = useState<readonly DesktopModel[]>([]);
   const [model, setModel] = useState<DesktopModel>();
   const [baseUrl, setBaseUrl] = useState("");
   const [modelName, setModelName] = useState("");
-  const [apiKey, setApiKey] = useState("");
   const [task, setTask] = useState("");
   const [snapshot, setSnapshot] = useState<LiveSnapshot>();
   const [noticeKey, setNoticeKey] = useState<"live.notice.chooseWorkspaceAndModel" | "live.notice.modelReady" | "live.notice.enterApiKey" | "live.notice.commandConfirmed" | "live.notice.completeSetup" | "live.notice.runUpdated">("live.notice.chooseWorkspaceAndModel");
@@ -243,7 +243,7 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   }, [surface]);
   const chooseProject = useCallback(async (next: DesktopProject): Promise<void> => {
     const profile = next.profile ?? { kinds: [], candidates: [], notices: [] };
-    setProject({ ...next, profile }); setCandidates(profile.candidates); setModel(undefined); setSnapshot(undefined);
+    setProject({ ...next, profile }); setCandidates(profile.candidates); setCommands(await surface.command?.list(next.projectId) ?? []); setModel(undefined); setSnapshot(undefined);
     const found = await surface.model?.list(next.projectId) ?? [];
     setModels(found); if (found[0]) await chooseModel(found[0]);
   }, [chooseModel, surface]);
@@ -264,18 +264,20 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
     if (!project || !baseUrl || !modelName) return;
     const saved = await surface.model?.save({ projectId: project.projectId, baseUrl, model: modelName });
     if (!saved) return;
-    if (apiKey) await surface.credential?.save(saved.configId, apiKey);
-    setApiKey(""); await chooseModel(saved); await chooseProject(project);
+    await chooseModel(saved); await chooseProject(project);
   }
   async function confirmCandidate(candidateId: string): Promise<void> {
     if (!project) return;
     await surface.command?.confirm(project.projectId, candidateId);
     setCandidates((items) => items.filter((candidate) => candidate.candidateId !== candidateId));
+    setCommands(await surface.command?.list(project.projectId) ?? []);
     setNoticeKey("live.notice.commandConfirmed");
   }
   async function start(): Promise<void> {
     if (!project || !model || !task.trim()) { setNoticeKey("live.notice.completeSetup"); return; }
-    const result = await surface.run?.start({ projectId: project.projectId, modelConfigId: model.configId, task });
+    const selectedCommand = commands.find((command) => command.confirmedByUser && command.purpose === "test")
+      ?? commands.find((command) => command.confirmedByUser);
+    const result = await surface.run?.start({ projectId: project.projectId, modelConfigId: model.configId, task, verificationCommandId: selectedCommand?.commandId });
     if (result && typeof result === "object" && "run" in result) setSnapshot(result as LiveSnapshot);
     setNoticeKey("live.notice.runUpdated");
   }
@@ -288,7 +290,7 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   return <main className="workbench-shell">
     <aside className="workspace-rail" aria-label={t(locale, "workbench.workspaceNavigation")}><div className="brand-mark"><Command size={18} /><span>Todex</span><button type="button" onClick={onToggleLocale}>{locale === "zh-CN" ? "English" : "Chinese"}</button></div>
       <button className="project-switcher" type="button" onClick={() => void importWorkspace()}><FolderKanban size={16} /><span>{project?.displayName ?? t(locale, "live.selectWorkspace")}</span><ChevronRight size={14} /></button>
-      <section className="rail-section"><p>{t(locale, "live.modelConfiguration")}</p><label>Base URL<input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.example.com/v1" /></label><label>{t(locale, "live.model")}<input value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="model-name" /></label><label>{t(locale, "live.apiKey")}<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={t(locale, "live.apiKeyPlaceholder")} /></label><button className="run-row selected" type="button" onClick={() => void saveModel()}>{t(locale, "live.saveModelConfiguration")}</button></section>
+      <section className="rail-section"><p>{t(locale, "live.modelConfiguration")}</p><label>Base URL<input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.example.com/v1" /></label><label>{t(locale, "live.model")}<input value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="model-name" /></label><p>{t(locale, "live.apiKeyPlaceholder")}</p><button className="run-row selected" type="button" onClick={() => void saveModel()}>{t(locale, "live.saveModelConfiguration")}</button></section>
       <nav className="rail-nav">{projects.map((item) => <button key={item.projectId} type="button" onClick={() => void chooseProject(item)}><FolderKanban size={16} /><span>{item.displayName}</span></button>)}{models.map((item) => <button key={item.configId} type="button" onClick={() => void chooseModel(item)}><Command size={16} /><span>{item.model}</span></button>)}</nav>
     </aside>
     <section className="execution-area"><header className="stream-header"><div><span className="eyebrow">{t(locale, "workbench.workspace")}</span><h1>{project?.displayName ?? t(locale, "live.noWorkspaceSelected")}</h1></div><div className={`phase phase-${phase.className}`}><span />{t(locale, phase.labelKey)}</div>{snapshot && (snapshot.run.status === "running" || snapshot.run.status === "awaiting_approval" || snapshot.run.status === "dispatching") ? <button className="icon-button" type="button" aria-label={t(locale, "live.stopRun")} title={t(locale, "live.stopRun")} onClick={() => void surface.run?.cancel(snapshot.run.runId)}><X size={17} aria-hidden="true" /></button> : null}</header>

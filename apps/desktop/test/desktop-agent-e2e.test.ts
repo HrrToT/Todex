@@ -111,8 +111,8 @@ describe("desktop governed agent flow", () => {
     expect(updates).toEqual(["running"]);
     release();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(updates).toEqual(["running", "completed"]);
-    expect(service.snapshot("background-run")?.run.status).toBe("completed");
+    expect(updates).toEqual(["running", "completed_unverified"]);
+    expect(service.snapshot("background-run")?.run.status).toBe("completed_unverified");
   });
 
   it("persists a stable failed snapshot when a background run hits an unexpected service error", async () => {
@@ -188,7 +188,7 @@ describe("desktop governed agent flow", () => {
       const completed = await service.decideApproval({ runId: pending.run.runId, approvalId: pending.pendingApproval!.approvalId, decision: "once" });
 
       expect(readFileSync(join(workspaceRoot, "answer.ts"), "utf8")).toBe("export const answer = 2;\n");
-      expect(completed.run.status).toBe("completed");
+      expect(completed.run.status).toBe("completed_unverified");
       expect(commandRunner.calls).toHaveLength(1);
       expect(requests).toHaveLength(3);
       expect(requests.every((request) => request.url === "/v1/chat/completions")).toBe(true);
@@ -244,7 +244,7 @@ describe("desktop governed agent flow", () => {
       const completed = await service.decideApproval({ runId: pending.run.runId, approvalId: pending.pendingApproval!.approvalId, decision: "once" });
 
       expect(readFileSync(join(workspaceRoot, "answer.py"), "utf8")).toBe("answer = 2\n");
-      expect(completed.run.status).toBe("completed");
+      expect(completed.run.status).toBe("completed_unverified");
       expect(commandRunner.calls).toEqual([{ argv: ["python", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000 }]);
       expect(endpoints).toEqual(["/v1/chat/completions", "/v1/chat/completions", "/v1/chat/completions"]);
     } finally {
@@ -298,7 +298,7 @@ describe("desktop governed agent flow", () => {
     });
 
     expect(commandRunner.calls).toEqual([{ argv: ["node", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000 }]);
-    expect(completed.run.status).toBe("completed");
+    expect(completed.run.status).toBe("completed_unverified");
     expect(completed.trace.map((trace) => trace.type)).toEqual([
       "action_requested",
       "tool_completed",
@@ -370,6 +370,29 @@ describe("desktop governed agent flow", () => {
     expect(JSON.stringify(store.listTraces("summary-redaction-run"))).not.toContain("C:\\Users\\Lenovo");
   });
 
+  it("does not persist a credential echoed by a schema-valid model action or task", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-credential-redaction-"));
+    temporaryDirectories.push(workspaceRoot);
+    const now = "2026-08-13T00:00:00.000Z";
+    const store = new FakeStore(
+      { projectId: "project-credential-redaction", workspaceRoot, displayName: "node-fixture", profileJson: "{}", createdAt: now, updatedAt: now },
+      { configId: "model-credential-redaction", projectId: "project-credential-redaction", baseUrl: "https://example.invalid/v1", model: "mock-model", parametersJson: "{}", createdAt: now, updatedAt: now },
+      { commandId: "test", projectId: "project-credential-redaction", purpose: "test", argv: ["node", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000, confirmedByUser: true },
+    );
+    const host = { store, readLlmConfiguration: async () => ({ baseUrl: "https://example.invalid/v1", model: "mock-model", apiKey: API_KEY }) } as unknown as WorkspaceHost;
+    const service = new DesktopRunService({
+      host,
+      completionClientFactory: () => new ScriptedCompletionClient([JSON.stringify({ tool: "finish", summary: `provider echoed ${API_KEY}`, completion: "verified" })]),
+      now: () => new Date(now),
+      idFactory: () => "credential-redaction-run",
+    });
+
+    await service.start({ projectId: "project-credential-redaction", task: `repair using ${API_KEY}`, modelConfigId: "model-credential-redaction" });
+
+    expect(JSON.stringify(store.getRun("credential-redaction-run"))).not.toContain(API_KEY);
+    expect(JSON.stringify(store.listTraces("credential-redaction-run"))).not.toContain(API_KEY);
+  });
+
   it("rejects a second active run for the same project", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-active-"));
     temporaryDirectories.push(workspaceRoot);
@@ -397,7 +420,7 @@ describe("desktop governed agent flow", () => {
     await expect(service.start({ projectId: "project-active", task: "second", modelConfigId: "model-active" }))
       .rejects.toThrow("project_run_active");
     releaseFirst();
-    await expect(first).resolves.toMatchObject({ run: { status: "completed" } });
+    await expect(first).resolves.toMatchObject({ run: { status: "completed_unverified" } });
   });
 
   it("aborts an in-flight model request when the desktop run is cancelled", async () => {

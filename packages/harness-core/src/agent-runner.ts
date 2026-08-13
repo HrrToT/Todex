@@ -339,7 +339,7 @@ export class AgentRunner {
           if (this.verificationRunner) {
             status = state.latestVerification?.classification === "passed" ? "completed" : "completed_unverified";
           } else {
-            status = "completed";
+            status = "completed_unverified";
           }
         }
         this.transitionSafely(state, status);

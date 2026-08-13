@@ -556,7 +556,7 @@ describe("AgentRunner governance integration", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("completed_unverified");
     expect(dispatcher.calls).toHaveLength(1);
     expect(dispatcher.calls[0].action.tool).toBe("read_file");
   });
@@ -614,7 +614,7 @@ describe("AgentRunner governance integration", () => {
 
     const second = await runner.decideApproval({ approvalId, decision: "once" });
 
-    expect(second.status).toBe("completed");
+    expect(second.status).toBe("completed_unverified");
     expect(dispatcher.calls).toHaveLength(1);
     expect(dispatcher.calls[0].action.tool).toBe("run_shell_command_with_approval");
   });
@@ -834,7 +834,7 @@ describe("AgentRunner governance integration", () => {
 
     const second = await runner.decideApproval({ approvalId, decision: "deny" });
 
-    expect(second.status).toBe("completed");
+    expect(second.status).toBe("completed_unverified");
     expect(dispatcher.calls).toHaveLength(0);
     expect(captured).not.toBeNull();
     expect(captured!.previousResults).toHaveLength(1);
@@ -896,7 +896,7 @@ describe("AgentRunner governance integration", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("completed_unverified");
     expect(dispatcher.calls).toHaveLength(0);
     expect(captured).not.toBeNull();
     expect(captured!.previousResults[0].status).toBe("rejected");
@@ -944,7 +944,7 @@ describe("AgentRunner governance integration", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("completed_unverified");
     expect(dispatcher.calls).toHaveLength(2);
     expect(result.pendingApproval).toBeUndefined();
   });
@@ -987,7 +987,7 @@ describe("AgentRunner governance integration", () => {
     expect(stillPending?.decision).toBeUndefined();
 
     const second = await runner.decideApproval({ approvalId, decision: "once" });
-    expect(second.status).toBe("completed");
+    expect(second.status).toBe("completed_unverified");
     expect(dispatcher.calls).toHaveLength(1);
     expect(dispatcher.calls[0].action.tool).toBe("run_shell_command_with_approval");
   });

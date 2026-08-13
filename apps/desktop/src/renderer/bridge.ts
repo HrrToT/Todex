@@ -24,7 +24,7 @@ export interface TodexPreloadSurface {
     list(): Promise<readonly DesktopProjectProjection[]>;
   };
   command?: {
-    list(projectId: string): Promise<readonly unknown[]>;
+    list(projectId: string): Promise<readonly DesktopConfiguredCommand[]>;
     confirm(projectId: string, candidateId: string): Promise<unknown>;
     remove(commandId: string): Promise<unknown>;
   };
@@ -34,7 +34,6 @@ export interface TodexPreloadSurface {
   };
   credential?: {
     status(configId: string): Promise<{ configured: boolean; availability: "available" | "unavailable" }>;
-    save(configId: string, apiKey: string): Promise<{ configured: true }>;
   };
   settings?: {
     getLocale(): Promise<{ locale: Locale }>;
@@ -47,6 +46,12 @@ export interface DesktopCommandCandidate {
   readonly purpose: "test" | "lint" | "typecheck" | "build";
   readonly argv: readonly string[];
   readonly reason: string;
+}
+
+export interface DesktopConfiguredCommand {
+  readonly commandId: string;
+  readonly purpose: "test" | "lint" | "typecheck" | "build";
+  readonly confirmedByUser: boolean;
 }
 
 export interface DesktopProjectProjection {

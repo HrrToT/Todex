@@ -5,8 +5,11 @@ import { dirname, relative, resolve } from "node:path";
 import type { SearchMatch, WorkspaceFs } from "@todex/harness-core";
 import { isSensitivePath, type PathResolver } from "@todex/harness-core";
 
+type WriteText = (path: string, content: string, encoding: "utf8") => Promise<void>;
+
 export interface NodeWorkspaceFsOptions {
   readonly workspaceRoot: string;
+  readonly writeText?: WriteText;
 }
 
 const MAX_LIST_ENTRIES = 1_000;
@@ -15,9 +18,11 @@ const MAX_SEARCH_LINE_LENGTH = 4_096;
 
 export class NodeWorkspaceFs implements WorkspaceFs, PathResolver {
   private readonly root: string;
+  private readonly writeText: WriteText;
 
   constructor(options: NodeWorkspaceFsOptions) {
     this.root = realpathSync.native(resolve(options.workspaceRoot));
+    this.writeText = options.writeText ?? writeFile;
   }
 
   resolveCanonical(workspaceRoot: string, path: string): string {
@@ -74,13 +79,26 @@ export class NodeWorkspaceFs implements WorkspaceFs, PathResolver {
 
   async commit(next: ReadonlyMap<string, string | undefined>): Promise<void> {
     const resolved = [...next.entries()].map(([path, content]) => ({ path, content, target: this.resolveChecked(path, true) }));
+    const before = new Map<string, string | undefined>();
     for (const entry of resolved) {
-      if (entry.content === undefined) {
-        await rm(entry.target, { force: true });
-      } else {
-        await mkdir(dirname(entry.target), { recursive: true });
-        await writeFile(entry.target, entry.content, "utf8");
+      try { before.set(entry.target, await readFile(entry.target, "utf8")); }
+      catch (error) { if (isMissing(error)) before.set(entry.target, undefined); else throw error; }
+    }
+    try {
+      for (const entry of resolved) {
+        if (entry.content === undefined) await rm(entry.target, { force: true });
+        else { await mkdir(dirname(entry.target), { recursive: true }); await this.writeText(entry.target, entry.content, "utf8"); }
       }
+    } catch (error) {
+      await this.restore(before);
+      throw error;
+    }
+  }
+
+  private async restore(before: ReadonlyMap<string, string | undefined>): Promise<void> {
+    for (const [target, content] of before) {
+      if (content === undefined) await rm(target, { force: true });
+      else { await mkdir(dirname(target), { recursive: true }); await writeFile(target, content, "utf8"); }
     }
   }
 

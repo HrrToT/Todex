@@ -49,10 +49,8 @@ const EXPECTED_CHANNELS = [
   "approval.listPending",
   "approval.decide",
   "memory.list",
-  "memory.save",
   "memory.delete",
   "credential.status",
-  "credential.save",
   "credential.clear",
   "settings.getLocale",
   "settings.setLocale",
@@ -71,6 +69,8 @@ describe("desktop IPC", () => {
     expect(ipcMain.handlers.has("filesystem.read")).toBe(false);
     expect(ipcMain.handlers.has("project.selectWorkspace")).toBe(false);
     expect(ipcMain.handlers.has("project.save")).toBe(false);
+    expect(ipcMain.handlers.has("credential.save")).toBe(false);
+    expect(ipcMain.handlers.has("memory.save")).toBe(false);
   });
 
   it("exposes workspace selection but no renderer-supplied filesystem operation", () => {
@@ -138,11 +138,10 @@ describe("desktop IPC", () => {
     );
   });
 
-  it("scopes credential IPC to a model config and returns redacted lifecycle DTOs", async () => {
+  it("exposes only credential status and clearing lifecycle operations", async () => {
     const ipcMain = new FakeIpcMain();
     const host = {
       credentialStatus: vi.fn().mockResolvedValue({ configured: true, availability: "available" }),
-      saveCredential: vi.fn().mockResolvedValue({ configured: true }),
       clearCredential: vi.fn().mockResolvedValue({ configured: false }),
     };
     registerTodexIpc(ipcMain, host as never);
@@ -150,19 +149,12 @@ describe("desktop IPC", () => {
     await expect(ipcMain.handlers.get("credential.status")?.({}, { configId: "config-1" })).resolves.toEqual(
       { configured: true, availability: "available" },
     );
-    await expect(
-      ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "secret-value" }),
-    ).resolves.toEqual({ configured: true });
     await expect(ipcMain.handlers.get("credential.clear")?.({}, { configId: "config-1" })).resolves.toEqual({
       configured: false,
     });
 
     expect(host.credentialStatus).toHaveBeenCalledWith("config-1");
-    expect(host.saveCredential).toHaveBeenCalledWith("config-1", "secret-value");
     expect(host.clearCredential).toHaveBeenCalledWith("config-1");
-    expect(
-      JSON.stringify(await ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "secret-value" })),
-    ).not.toContain("secret-value");
   });
 
   it("persists only the supported locale through intention-level settings IPC", async () => {
@@ -288,6 +280,23 @@ describe("desktop IPC", () => {
 
     expect(firstSend).toHaveBeenCalledWith("run.update", expect.objectContaining({ run: { runId: "run-1", projectId: "p1", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 } }));
     expect(secondSend).toHaveBeenCalledWith("run.update", expect.objectContaining({ run: { runId: "run-1", projectId: "p1", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 } }));
+  });
+
+  it("cleans a destroyed renderer sender without affecting another subscription", async () => {
+    const ipcMain = new FakeIpcMain();
+    const listeners: Array<{ active: boolean; listener: (snapshot: unknown) => void }> = [];
+    const service = { subscribe: vi.fn((listener: (snapshot: unknown) => void) => { const entry = { active: true, listener }; listeners.push(entry); return () => { entry.active = false; }; }), snapshot: vi.fn(() => undefined) } as unknown as DesktopRunService;
+    const firstDestroyed: Array<() => void> = [];
+    const firstSend = vi.fn(); const secondSend = vi.fn();
+    const first = { send: firstSend, on: (_event: "destroyed", listener: () => void) => firstDestroyed.push(listener) };
+    const second = { send: secondSend };
+    registerTodexIpc(ipcMain, { store: {} } as never, undefined, service);
+    await ipcMain.handlers.get("run.subscribe")?.({ sender: first }, { runId: "run-1" });
+    await ipcMain.handlers.get("run.subscribe")?.({ sender: second }, { runId: "run-1" });
+    firstDestroyed[0]?.();
+    for (const entry of listeners) if (entry.active) entry.listener({ run: { runId: "run-1", projectId: "p1", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 }, trace: [], results: [] });
+    expect(firstSend).not.toHaveBeenCalled();
+    expect(secondSend).toHaveBeenCalledTimes(1);
   });
 
   it("keeps task text and credential references out of all renderer query projections", async () => {

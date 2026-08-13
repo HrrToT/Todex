@@ -158,13 +158,13 @@ export class DesktopRunService {
       this.host.store.saveRun({
         runId,
         projectId: project.projectId,
-        taskText: input.task,
+        taskText: redactProjectedText(input.task, [credential.apiKey]),
         status: "running",
         startedAt,
         repairAttempts: 0,
       });
 
-      const traceStore = new PersistedTraceStore(this.host, this.now);
+      const traceStore = new PersistedTraceStore(this.host, this.now, [credential.apiKey]);
       const clock = { now: this.now };
       const approvalStore = new PersistedApprovalStore(this.host, clock, this.idFactory);
       const workspaceFs = new NodeWorkspaceFs({ workspaceRoot: project.workspaceRoot });
@@ -256,7 +256,9 @@ export class DesktopRunService {
     });
     const snapshot: DesktopRunSnapshot = Object.freeze({ run, trace: Object.freeze([...this.host.store.listTraces(runId)]), results: Object.freeze([...results]), ...(pendingApproval ? { pendingApproval } : {}) });
     this.snapshots.set(runId, snapshot);
-    for (const listener of this.subscribers) listener(cloneSnapshot(snapshot));
+    for (const listener of this.subscribers) {
+      try { listener(cloneSnapshot(snapshot)); } catch { this.subscribers.delete(listener); }
+    }
     if (status !== "awaiting_approval" && status !== "running") {
       this.active.delete(runId);
       this.activeProjects.delete(run.projectId);
@@ -267,11 +269,15 @@ export class DesktopRunService {
 
 class PersistedTraceStore implements TraceStore {
   private readonly sequence = new Map<string, number>();
-  constructor(private readonly host: WorkspaceHost, private readonly now: () => Date) {}
+  constructor(
+    private readonly host: WorkspaceHost,
+    private readonly now: () => Date,
+    private readonly secretValues: readonly string[] = [],
+  ) {}
   append(input: { readonly runId: string; readonly type: TraceEvent["type"]; readonly payloadSummary: string }): TraceEvent {
     const sequence = this.sequence.get(input.runId) ?? this.host.store.listTraces(input.runId).length;
     this.sequence.set(input.runId, sequence + 1);
-    return this.host.store.appendTrace({ eventId: `${input.runId}-${sequence}`, ...input, payloadSummary: redactProjectedText(input.payloadSummary), sequence, timestamp: this.now().toISOString() });
+    return this.host.store.appendTrace({ eventId: `${input.runId}-${sequence}`, ...input, payloadSummary: redactProjectedText(input.payloadSummary, this.secretValues), sequence, timestamp: this.now().toISOString() });
   }
   list(runId: string): readonly TraceEvent[] { return this.host.store.listTraces(runId); }
 }
@@ -326,10 +332,14 @@ function commandResult(actionId: string, outcome: CommandExecution): ToolResult 
   return { resultId: `${actionId}-result`, actionId, status: outcome.condition === "success" ? "succeeded" : "failed", summary: `command ${outcome.condition}` };
 }
 function failedResult(actionId: string, summary: string): ToolResult { return { resultId: `${actionId}-result`, actionId, status: "failed", summary }; }
-function cloneSnapshot(snapshot: DesktopRunSnapshot): DesktopRunSnapshot { return { run: { ...snapshot.run }, trace: snapshot.trace.map((event) => ({ ...event, payloadSummary: redactProjectedText(event.payloadSummary) })), results: snapshot.results.map((result) => ({ ...result, summary: redactProjectedText(result.summary) })), ...(snapshot.pendingApproval ? { pendingApproval: { ...snapshot.pendingApproval, riskReasons: snapshot.pendingApproval.riskReasons.map(redactProjectedText) } } : {}) }; }
+function cloneSnapshot(snapshot: DesktopRunSnapshot): DesktopRunSnapshot { return { run: { ...snapshot.run }, trace: snapshot.trace.map((event) => ({ ...event, payloadSummary: redactProjectedText(event.payloadSummary) })), results: snapshot.results.map((result) => ({ ...result, summary: redactProjectedText(result.summary) })), ...(snapshot.pendingApproval ? { pendingApproval: { ...snapshot.pendingApproval, riskReasons: snapshot.pendingApproval.riskReasons.map((reason) => redactProjectedText(reason)) } } : {}) }; }
 
-function redactProjectedText(value: string): string {
-  return value
+function redactProjectedText(value: string, secretValues: readonly string[] = []): string {
+  const withoutKnownSecrets = secretValues.reduce(
+    (redacted, secret) => secret.length > 0 ? redacted.split(secret).join("[REDACTED]") : redacted,
+    value,
+  );
+  return withoutKnownSecrets
     .replace(SENSITIVE_VALUE_PATTERN, "$1[REDACTED]")
     .replace(WINDOWS_ABSOLUTE_PATH_PATTERN, "[REDACTED_PATH]")
     .replace(UNIX_ABSOLUTE_PATH_PATTERN, "[REDACTED_PATH]")

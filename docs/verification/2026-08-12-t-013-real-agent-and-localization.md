@@ -141,3 +141,37 @@ git diff --check
 ## Remaining Evidence Boundary
 
 No actual external model request, real API key, user repository mutation, real command, installed Windows Electron interaction, external Mock HTTP server fixture, PR, CI, or release was claimed by this record. The local Node 24 runtime cannot load the missing `better-sqlite3` ABI 137 binding, so the existing SQLite/WorkspaceHost suite and the new locale reopen test require Windows Node 20 CI evidence. This environment limitation is not suppressed or counted as a passing local native test.
+
+## Pre-merge Security Rework (2026-08-13)
+
+- The renderer, preload surface and IPC allowlist no longer expose `credential.save` or `memory.save`.
+  The workbench does not contain an API key input. A model configuration records only base URL and
+  model name; the main process reads a pre-existing secret from Credential Manager for the active
+  configuration. This avoids sending plaintext credentials through renderer state, IPC, SQLite,
+  trace, logs or renderer projections.
+- Run task persistence and trace persistence redact the active Credential Manager secret by literal
+  value as well as credential-shaped text. The desktop end-to-end regression covers a schema-valid
+  `finish` action that echoes the active key and proves it is absent from both the run record and
+  persisted trace.
+- The renderer loads confirmed commands for the selected project and passes a confirmed test command
+  (or another confirmed command when no test exists) as `verificationCommandId`. A `finish` action
+  claiming `verified` cannot produce `completed` when no verification runner exists; it is reported
+  as `completed_unverified`.
+- `NodeWorkspaceFs.commit()` snapshots every target before a multi-file update and restores the
+  snapshot after an ordinary write failure. The injected second-write failure test reads both real
+  files after rejection and proves neither retained a partial update. This is rollback protection,
+  not a claim of crash-atomic filesystem transactions.
+- IPC subscription cleanup is bound to Electron sender destruction. A destroyed sender unsubscribes
+  its listeners without affecting another sender observing the same run; failed listener callbacks
+  are isolated so they cannot prevent terminal run persistence.
+
+Focused evidence for this rework:
+
+```powershell
+pnpm.cmd --filter @todex/harness-core test --run agent-runner.test.ts
+# 36 tests passed
+pnpm.cmd --filter @todex/desktop test --run ipc.test.ts workbench.spec.tsx desktop-agent-e2e.test.ts node-workspace-fs.test.ts desktop-run-service.test.ts
+# 48 tests passed
+pnpm.cmd typecheck
+# exit 0
+```

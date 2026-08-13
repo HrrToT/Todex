@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -65,5 +65,22 @@ describe("NodeWorkspaceFs", () => {
     expect(fs.resolveCanonical(workspaceRoot, "src/new-file.ts")).toMatch(/src[\\/]new-file\.ts$/);
     expect(() => fs.resolveCanonical(workspaceRoot, "../outside.ts")).toThrow("workspace_escape");
     expect(() => fs.resolveCanonical(workspaceRoot, ".env")).toThrow("sensitive_path");
+  });
+
+  it("restores every real file when a later multi-file write fails", async () => {
+    const workspaceRoot = createWorkspace();
+    let writes = 0;
+    const fs = new NodeWorkspaceFs({
+      workspaceRoot,
+      writeText: async (path, content) => {
+        writes += 1;
+        if (writes === 2) throw new Error("injected_write_failure");
+        writeFileSync(path, content, "utf8");
+      },
+    });
+
+    await expect(fs.commit(new Map([["safe.ts", "changed\n"], ["src/find-me.ts", "changed-too\n"]]))).rejects.toThrow("injected_write_failure");
+    expect(readFileSync(join(workspaceRoot, "safe.ts"), "utf8")).toBe("export const answer = 42;\n");
+    expect(readFileSync(join(workspaceRoot, "src", "find-me.ts"), "utf8")).toBe("const needle = true;\n");
   });
 });

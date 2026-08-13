@@ -759,6 +759,8 @@ interactive visual acceptance.
 - [x] Run-stream subscriptions are sender-scoped, so separate Electron windows can observe the same Run without either renderer removing the other's listener.
 - [x] Independent T-013 review rework closes background terminal-state loss, immediate awaiting-approval cancellation, schema-valid model summary path/key redaction, and localized terminal Run status rendering.
 - [x] Remaining live-workbench setup labels, notices, candidate confirmation and accessibility text use the `zh-CN` / `en-US` catalog; argv, paths, diffs, JSON and trace type evidence remain literal.
+- [x] Pre-merge security rework removes Renderer/IPC API-key capture and arbitrary memory writes, redacts an active credential value before task/trace persistence, passes a user-confirmed verification command from the live workbench, and returns `completed_unverified` whenever no verification runner exists.
+- [x] Pre-merge robustness rework rolls back ordinary multi-file Node workspace write failures and removes sender-scoped run subscriptions when an Electron renderer is destroyed or cannot receive updates.
 - [ ] Independent specification/security review, GitHub CI, and Windows installed-app manual acceptance remain required before release.
 - [ ] Local complete Vitest evidence remains blocked by missing `better-sqlite3` Node ABI 137 binding under Node 24.14.0; do not suppress the existing SQLite/WorkspaceHost tests.
 
