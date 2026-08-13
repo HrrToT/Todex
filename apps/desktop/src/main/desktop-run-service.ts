@@ -109,6 +109,7 @@ export class DesktopRunService {
   private readonly active = new Map<string, AgentRunner>();
   private readonly activeProjects = new Map<string, string>();
   private readonly snapshots = new Map<string, DesktopRunSnapshot>();
+  private readonly subscribers = new Set<(snapshot: DesktopRunSnapshot) => void>();
 
   constructor(options: DesktopRunServiceOptions) {
     this.host = options.host;
@@ -119,6 +120,23 @@ export class DesktopRunService {
   }
 
   async start(input: DesktopRunStartInput): Promise<DesktopRunSnapshot> {
+    const initialized = await this.initialize(input);
+    return this.execute(initialized.runId, initialized.projectId, initialized.runner, input);
+  }
+
+  async startBackground(input: DesktopRunStartInput): Promise<DesktopRunSnapshot> {
+    const initialized = await this.initialize(input);
+    const initial = this.persistSnapshot(initialized.runId, "running", undefined, []);
+    void this.execute(initialized.runId, initialized.projectId, initialized.runner, input).catch(() => undefined);
+    return initial;
+  }
+
+  subscribe(listener: (snapshot: DesktopRunSnapshot) => void): () => void {
+    this.subscribers.add(listener);
+    return () => this.subscribers.delete(listener);
+  }
+
+  private async initialize(input: DesktopRunStartInput): Promise<{ readonly runId: string; readonly projectId: string; readonly runner: AgentRunner }> {
     const project = this.host.store.getProject(input.projectId);
     if (!project) throw new Error("project_not_found");
     const config = this.host.store.getModelConfig(input.modelConfigId);
@@ -174,11 +192,23 @@ export class DesktopRunService {
         : {}),
       });
       this.active.set(runId, runner);
-      const result = await runner.run({ runId, projectId: project.projectId, task: input.task, workspaceRoot: project.workspaceRoot });
-      return this.persistSnapshot(runId, result.status, result.stopReason, result.results, result.pendingApproval);
+      return { runId, projectId: project.projectId, runner };
     } catch (error) {
       this.active.delete(runId);
       this.activeProjects.delete(project.projectId);
+      throw error;
+    }
+  }
+
+  private async execute(runId: string, projectId: string, runner: AgentRunner, input: DesktopRunStartInput): Promise<DesktopRunSnapshot> {
+    try {
+      const project = this.host.store.getProject(projectId);
+      if (!project) throw new Error("project_not_found");
+      const result = await runner.run({ runId, projectId, task: input.task, workspaceRoot: project.workspaceRoot });
+      return this.persistSnapshot(runId, result.status, result.stopReason, result.results, result.pendingApproval);
+    } catch (error) {
+      this.active.delete(runId);
+      this.activeProjects.delete(projectId);
       throw error;
     }
   }
@@ -210,6 +240,7 @@ export class DesktopRunService {
     });
     const snapshot: DesktopRunSnapshot = Object.freeze({ run, trace: Object.freeze([...this.host.store.listTraces(runId)]), results: Object.freeze([...results]), ...(pendingApproval ? { pendingApproval } : {}) });
     this.snapshots.set(runId, snapshot);
+    for (const listener of this.subscribers) listener(cloneSnapshot(snapshot));
     if (status !== "awaiting_approval" && status !== "running") {
       this.active.delete(runId);
       this.activeProjects.delete(run.projectId);

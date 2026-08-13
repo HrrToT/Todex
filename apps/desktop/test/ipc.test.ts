@@ -44,6 +44,8 @@ const EXPECTED_CHANNELS = [
   "run.get",
   "run.snapshot",
   "run.cancel",
+  "run.subscribe",
+  "run.unsubscribe",
   "approval.listPending",
   "approval.decide",
   "memory.list",
@@ -184,7 +186,7 @@ describe("desktop IPC", () => {
   it("exposes only high-level run intent to the main-process service", async () => {
     const ipcMain = new FakeIpcMain();
     const service = {
-      start: vi.fn().mockResolvedValue({ run: { runId: "run-1" }, trace: [], results: [] }),
+      startBackground: vi.fn().mockResolvedValue({ run: { runId: "run-1", projectId: "p1", status: "running", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 }, trace: [], results: [] }),
       snapshot: vi.fn().mockReturnValue(undefined),
       cancel: vi.fn(),
       decideApproval: vi.fn(),
@@ -195,7 +197,7 @@ describe("desktop IPC", () => {
     await expect(
       ipcMain.handlers.get("run.start")?.({}, { projectId: "p1", task: "修复测试", modelConfigId: "m1" }),
     ).resolves.toMatchObject({ run: { runId: "run-1" } });
-    expect(service.start).toHaveBeenCalledWith({ projectId: "p1", task: "修复测试", modelConfigId: "m1" });
+    expect(service.startBackground).toHaveBeenCalledWith({ projectId: "p1", task: "修复测试", modelConfigId: "m1" });
     await expect(
       ipcMain.handlers.get("run.start")?.({}, { projectId: "p1", task: "x", modelConfigId: "m1", workspaceRoot: "C:\\outside" }),
     ).rejects.toThrow("invalid_ipc_input");
@@ -204,7 +206,7 @@ describe("desktop IPC", () => {
   it("returns a redacted run projection instead of the original task text", async () => {
     const ipcMain = new FakeIpcMain();
     const service = {
-      start: vi.fn().mockResolvedValue({
+      startBackground: vi.fn().mockResolvedValue({
         run: { runId: "run-1", projectId: "p1", taskText: "API_KEY=secret-value", status: "running", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
         trace: [], results: [],
       }),
@@ -218,6 +220,40 @@ describe("desktop IPC", () => {
     expect(snapshot).toMatchObject({ run: { runId: "run-1", status: "running" }, trace: [], results: [] });
     expect(JSON.stringify(snapshot)).not.toContain("secret-value");
     expect(JSON.stringify(snapshot)).not.toContain("taskText");
+  });
+
+  it("subscribes only to redacted background run updates", async () => {
+    const ipcMain = new FakeIpcMain();
+    const listeners: Array<(snapshot: unknown) => void> = [];
+    const service = {
+      subscribe: vi.fn((listener: (snapshot: unknown) => void) => { listeners.push(listener); return () => undefined; }),
+      snapshot: vi.fn(() => ({
+        run: { runId: "run-1", projectId: "p1", taskText: "API_KEY=secret-value", status: "running", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
+        trace: [], results: [],
+      })),
+    } as unknown as DesktopRunService;
+    const host = { store: { getRun: vi.fn(() => ({ runId: "run-1" })) } };
+    const send = vi.fn();
+    registerTodexIpc(ipcMain, host as never, undefined, service);
+
+    await expect(ipcMain.handlers.get("run.subscribe")?.({ sender: { send } }, { runId: "run-1" })).resolves.toEqual({ subscribed: true });
+    expect(send).toHaveBeenCalledWith("run.update", expect.objectContaining({
+      run: expect.objectContaining({ runId: "run-1", status: "running" }),
+    }));
+    send.mockClear();
+    listeners[0]?.({
+      run: { runId: "another-run", projectId: "p1", taskText: "API_KEY=secret-value", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
+      trace: [], results: [],
+    });
+    expect(send).not.toHaveBeenCalled();
+    listeners[0]?.({
+      run: { runId: "run-1", projectId: "p1", taskText: "API_KEY=secret-value", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
+      trace: [], results: [],
+    });
+
+    expect(send).toHaveBeenCalledWith("run.update", expect.objectContaining({ run: expect.objectContaining({ runId: "run-1", status: "completed" }) }));
+    expect(JSON.stringify(send.mock.calls)).not.toContain("secret-value");
+    expect(JSON.stringify(send.mock.calls)).not.toContain("taskText");
   });
 
   it("keeps task text and credential references out of all renderer query projections", async () => {

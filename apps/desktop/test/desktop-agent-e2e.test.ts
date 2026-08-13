@@ -84,6 +84,37 @@ afterEach(() => {
 });
 
 describe("desktop governed agent flow", () => {
+  it("returns a running snapshot immediately and notifies subscribers when a background run ends", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-background-"));
+    temporaryDirectories.push(workspaceRoot);
+    const now = "2026-08-13T00:00:00.000Z";
+    const store = new FakeStore(
+      { projectId: "project-background", workspaceRoot, displayName: "node-fixture", profileJson: "{}", createdAt: now, updatedAt: now },
+      { configId: "model-background", projectId: "project-background", baseUrl: "https://example.invalid/v1", model: "mock-model", parametersJson: "{}", createdAt: now, updatedAt: now },
+      { commandId: "test", projectId: "project-background", purpose: "test", argv: ["node", "--version"], workingDirectory: workspaceRoot, timeoutMs: 1_000, confirmedByUser: true },
+    );
+    let release!: () => void;
+    const completion = new Promise<string>((resolve) => { release = () => resolve('{"tool":"finish","summary":"done"}'); });
+    const host = { store, readLlmConfiguration: async () => ({ baseUrl: "https://example.invalid/v1", model: "mock-model", apiKey: API_KEY }) } as unknown as WorkspaceHost;
+    const service = new DesktopRunService({
+      host,
+      completionClientFactory: () => ({ complete: async () => completion }),
+      now: () => new Date(now),
+      idFactory: () => "background-run",
+    });
+    const updates: string[] = [];
+    service.subscribe((snapshot) => updates.push(snapshot.run.status));
+
+    const initial = await service.startBackground({ projectId: "project-background", task: "wait", modelConfigId: "model-background" });
+
+    expect(initial.run.status).toBe("running");
+    expect(updates).toEqual(["running"]);
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(updates).toEqual(["running", "completed"]);
+    expect(service.snapshot("background-run")?.run.status).toBe("completed");
+  });
+
   it("completes a governed Node fixture loop through a local Chat Completions HTTP boundary", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "todex-desktop-http-e2e-"));
     temporaryDirectories.push(workspaceRoot);

@@ -755,6 +755,8 @@ interactive visual acceptance.
 - [x] T-013 review rework closes candidate-derived command confirmation, local-path projection, one-active-run-per-project and cancellation of in-flight model requests and approved fixed commands; the live workbench also exposes a session-local Chinese/English toggle.
 - [x] Locale preference is now constrained to `zh-CN`/`en-US`, persisted through the main-process SQLite settings store, and exposed only through `settings.getLocale`/`settings.setLocale`; all renderer-accessible workspace/model/run queries now use redacted projections.
 - [x] Local loopback Mock HTTP E2Es use the production Chat Completions client to complete both Node and Python fixture patch -> command approval -> verified finish flows, without changing the public Render Mock Demo boundary.
+- [x] Live desktop runs now return an immediate redacted `running` projection and stream matching redacted snapshots through `run.subscribe` / `run.unsubscribe`; subscribers receive a current-snapshot replay, and the workbench exposes a localized stop control for the existing governed cancellation path.
+- [x] Remaining live-workbench setup labels, notices, candidate confirmation and accessibility text use the `zh-CN` / `en-US` catalog; argv, paths, diffs, JSON and trace type evidence remain literal.
 - [ ] Independent specification/security review, GitHub CI, and Windows installed-app manual acceptance remain required before release.
 - [ ] Local complete Vitest evidence remains blocked by missing `better-sqlite3` Node ABI 137 binding under Node 24.14.0; do not suppress the existing SQLite/WorkspaceHost tests.
 

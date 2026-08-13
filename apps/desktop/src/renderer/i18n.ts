@@ -31,6 +31,21 @@ export type MessageKey =
   | "workbench.noStoredContext"
   | "workbench.memorySafety"
   | "workbench.traceTimeline"
+  | "live.modelConfiguration"
+  | "live.model"
+  | "live.apiKey"
+  | "live.selectWorkspace"
+  | "live.noWorkspaceSelected"
+  | "live.saveModelConfiguration"
+  | "live.apiKeyPlaceholder"
+  | "live.confirmCandidate"
+  | "live.notice.chooseWorkspaceAndModel"
+  | "live.notice.modelReady"
+  | "live.notice.enterApiKey"
+  | "live.notice.commandConfirmed"
+  | "live.notice.completeSetup"
+  | "live.notice.runUpdated"
+  | "live.stopRun"
   | "phase.idle"
   | "phase.running"
   | "phase.awaitingApproval"
@@ -86,6 +101,21 @@ const messages: Readonly<Record<Locale, Messages>> = Object.freeze({
     "workbench.noStoredContext": "未选择已存储的上下文",
     "workbench.memorySafety": "这里只会显示已经验证且不含敏感信息的项目事实。",
     "workbench.traceTimeline": "追踪时间线",
+    "live.modelConfiguration": "模型配置",
+    "live.model": "模型",
+    "live.apiKey": "API Key",
+    "live.selectWorkspace": "选择工作区",
+    "live.noWorkspaceSelected": "未选择工作区",
+    "live.saveModelConfiguration": "保存模型配置",
+    "live.apiKeyPlaceholder": "仅保存到 Credential Manager",
+    "live.confirmCandidate": "确认候选命令",
+    "live.notice.chooseWorkspaceAndModel": "请选择工作区并配置模型",
+    "live.notice.modelReady": "模型已配置，可以开始运行",
+    "live.notice.enterApiKey": "请输入 API Key 后保存模型凭据",
+    "live.notice.commandConfirmed": "已确认项目命令；每次执行仍需审批",
+    "live.notice.completeSetup": "请先选择工作区、模型并填写任务",
+    "live.notice.runUpdated": "运行状态已更新",
+    "live.stopRun": "停止运行",
     "phase.idle": "空闲",
     "phase.running": "运行中",
     "phase.awaitingApproval": "等待审批",
@@ -137,6 +167,21 @@ const messages: Readonly<Record<Locale, Messages>> = Object.freeze({
     "workbench.noStoredContext": "No stored context selected",
     "workbench.memorySafety": "Only verified, non-sensitive project facts will appear here.",
     "workbench.traceTimeline": "Trace timeline",
+    "live.modelConfiguration": "Model configuration",
+    "live.model": "Model",
+    "live.apiKey": "API Key",
+    "live.selectWorkspace": "Select workspace",
+    "live.noWorkspaceSelected": "No workspace selected",
+    "live.saveModelConfiguration": "Save model configuration",
+    "live.apiKeyPlaceholder": "Saved only to Credential Manager",
+    "live.confirmCandidate": "Confirm candidate command",
+    "live.notice.chooseWorkspaceAndModel": "Select a workspace and configure a model",
+    "live.notice.modelReady": "Model is configured and ready to run",
+    "live.notice.enterApiKey": "Enter an API Key, then save the model credential",
+    "live.notice.commandConfirmed": "Project command confirmed; each execution still requires approval",
+    "live.notice.completeSetup": "Select a workspace and model, then enter a task",
+    "live.notice.runUpdated": "Run status updated",
+    "live.stopRun": "Stop run",
     "phase.idle": "Idle",
     "phase.running": "Running",
     "phase.awaitingApproval": "Awaiting approval",

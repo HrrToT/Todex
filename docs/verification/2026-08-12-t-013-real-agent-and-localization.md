@@ -46,6 +46,34 @@ The live-workbench interaction test imports a selected workspace, saves a model 
 starts a high-level run, renders a projected approval trace, sends `{ runId, approvalId, decision }`,
 and confirms that the password field is cleared after save.
 
+## Live Run Stream Rework (2026-08-13)
+
+- `run.start` now returns a redacted `running` projection immediately. The main process runs the
+  governed loop in the background and publishes later projected snapshots through the narrow
+  `run.subscribe` / `run.unsubscribe` pair. The subscription receives an immediate replay of the
+  current snapshot, so a very fast terminal run cannot be missed between `start` and subscribe.
+- The main process filters every notification by its requested `runId`; the preload listener repeats
+  that check before calling the renderer callback. IPC tests prove the replay excludes task text and
+  seeded secrets, and that another run's event is not sent to this subscription.
+- A running live workbench exposes a labelled stop icon. It invokes only `run.cancel(runId)` and the
+  existing main-process cancellation path remains responsible for aborting model HTTP or a fixed
+  approved command. No renderer process receives a child-process or filesystem capability.
+- Remaining live-workbench labels, placeholders, notices and command-confirm controls now use the
+  existing `zh-CN` / `en-US` catalog. Technical evidence such as argv, trace type, diff and JSON
+  values remains literal rather than translated.
+
+Focused regression evidence after this rework:
+
+```powershell
+pnpm.cmd --filter @todex/desktop test --run ipc.test.ts desktop-agent-e2e.test.ts desktop-run-service.test.ts workbench.spec.tsx
+# 4 files, 36 tests passed
+pnpm.cmd typecheck
+pnpm.cmd lint
+pnpm.cmd build
+git diff --check
+# all exit 0
+```
+
 ## Review Rework Evidence (2026-08-13)
 
 - `command.confirm` accepts only `{ projectId, candidateId }`. The main process parses the stored

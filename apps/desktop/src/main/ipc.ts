@@ -15,6 +15,10 @@ export interface IpcMainLike {
   handle(channel: string, listener: (event: unknown, input: unknown) => unknown): void;
 }
 
+interface IpcEventLike {
+  readonly sender?: { send(channel: "run.update", payload: unknown): void };
+}
+
 export const TODexIpcChannels = [
   "workspace.choose",
   "project.importSelectedWorkspace",
@@ -31,6 +35,8 @@ export const TODexIpcChannels = [
   "run.get",
   "run.snapshot",
   "run.cancel",
+  "run.subscribe",
+  "run.unsubscribe",
   "approval.listPending",
   "approval.decide",
   "memory.list",
@@ -69,6 +75,7 @@ export function registerTodexIpc(
   workspaceSelector?: Pick<WorkspaceSelector, "choose">,
   runService?: DesktopRunService,
 ): void {
+  const runSubscriptions = new Map<string, () => void>();
   register(ipcMain, "workspace.choose", emptySchema, async () => {
     const selected = await workspaceSelector?.choose();
     return selected ? Object.freeze({ displayName: selected.displayName }) : undefined;
@@ -119,7 +126,7 @@ export function registerTodexIpc(
   register(ipcMain, "run.list", projectIdSchema, (input) => host.store.listRuns(input.projectId).map(runSessionProjection));
   register(ipcMain, "run.start", runStartSchema, async (input) => {
     if (!runService) throw new Error("host_operation_failed");
-    return runProjection(await runService.start(input));
+    return runProjection(await runService.startBackground(input));
   });
   register(ipcMain, "run.snapshot", runIdSchema, (input) => {
     if (!runService) throw new Error("host_operation_failed");
@@ -135,6 +142,23 @@ export function registerTodexIpc(
       runId: input.runId, status: "cancelled", endedAt: new Date().toISOString(), stopReason: "cancelled_by_user",
     }),
   );
+  register(ipcMain, "run.subscribe", runIdSchema, (input, event) => {
+    if (!runService) throw new Error("host_operation_failed");
+    const sender = (event as IpcEventLike).sender;
+    if (!sender) throw new Error("host_operation_failed");
+    runSubscriptions.get(input.runId)?.();
+    runSubscriptions.set(input.runId, runService.subscribe((snapshot) => {
+      if (snapshot.run.runId === input.runId) sender.send("run.update", runProjection(snapshot));
+    }));
+    const current = runService.snapshot(input.runId);
+    if (current) sender.send("run.update", runProjection(current));
+    return { subscribed: true };
+  });
+  register(ipcMain, "run.unsubscribe", runIdSchema, (input) => {
+    runSubscriptions.get(input.runId)?.();
+    runSubscriptions.delete(input.runId);
+    return { subscribed: false };
+  });
 
   register(ipcMain, "approval.listPending", projectIdSchema, (input) =>
     host.store.listPendingApprovals(input.projectId),
@@ -263,15 +287,15 @@ function register<T>(
   ipcMain: IpcMainLike,
   channel: (typeof TODexIpcChannels)[number],
   schema: z.ZodType<T>,
-  operation: (input: T) => unknown,
+  operation: (input: T, event: unknown) => unknown,
 ): void {
-  ipcMain.handle(channel, async (_event, rawInput) => {
+  ipcMain.handle(channel, async (event, rawInput) => {
     const parsed = schema.safeParse(rawInput);
     if (!parsed.success) {
       throw new Error("invalid_ipc_input");
     }
     try {
-      return await operation(parsed.data);
+      return await operation(parsed.data, event);
     } catch (error) {
       if (error instanceof Error && error.message === "credential_unavailable") {
         throw new Error("credential_unavailable");

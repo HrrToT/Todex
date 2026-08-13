@@ -29,7 +29,7 @@ describe("Codex-style workbench", () => {
     expect(screen.getByText("Base URL")).toBeVisible();
     expect(screen.getByPlaceholderText("https://api.example.com/v1")).toBeVisible();
     expect(screen.getByPlaceholderText("model-name")).toBeVisible();
-    expect(screen.getByPlaceholderText("仅保存到 Credential Manager")).toBeVisible();
+    expect(screen.getByPlaceholderText("Saved only to Credential Manager")).toBeVisible();
     expect(screen.queryByText("Ready for a task")).not.toBeInTheDocument();
     Object.defineProperty(window, "todex", { configurable: true, value: undefined });
   });
@@ -54,6 +54,7 @@ describe("Codex-style workbench", () => {
 
       expect(screen.getByRole("button", { name: "Chinese" })).toBeVisible();
       expect(screen.getByRole("textbox", { name: "Task or continuation" })).toBeVisible();
+      expect(screen.getByText("Select a workspace and configure a model")).toBeVisible();
       expect(setLocale).toHaveBeenCalledWith("en-US");
       expect(window.todex?.run).toBeDefined();
     } finally {
@@ -102,11 +103,11 @@ describe("Codex-style workbench", () => {
     });
 
     render(<WorkbenchApp locale="en-US" />);
-    await user.click(screen.getByRole("button", { name: /选择工作区/ }));
+    await user.click(screen.getByRole("button", { name: "Select workspace" }));
     await user.type(screen.getByPlaceholderText("https://api.example.com/v1"), "https://example.invalid/v1");
     await user.type(screen.getByPlaceholderText("model-name"), "mock-model");
-    await user.type(screen.getByPlaceholderText("仅保存到 Credential Manager"), "secret-value");
-    await user.click(screen.getByRole("button", { name: /保存模型配置/ }));
+    await user.type(screen.getByPlaceholderText("Saved only to Credential Manager"), "secret-value");
+    await user.click(screen.getByRole("button", { name: "Save model configuration" }));
 
     await user.type(screen.getByRole("textbox", { name: "Task or continuation" }), "Repair the fixture");
     await user.click(screen.getByRole("button", { name: "Run" }));
@@ -119,6 +120,42 @@ describe("Codex-style workbench", () => {
     await user.click(screen.getByRole("button", { name: "Allow once" }));
     expect(calls.approval).toEqual([{ runId: "run-live", approvalId: "approval-live", decision: "once" }]);
     Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+  });
+
+  it("offers a localized stop control only while a live run is active", async () => {
+    const user = userEvent.setup();
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: {
+          start: async () => ({ run: { runId: "run-active", status: "running" }, trace: [] }),
+          snapshot: async () => undefined,
+          cancel,
+          subscribe: () => () => undefined,
+        },
+        project: {
+          importSelectedWorkspace: async () => undefined,
+          list: async () => [{ projectId: "p-live", displayName: "node-fixture", profile: { kinds: [], candidates: [], notices: [] } }],
+        },
+        model: {
+          list: async () => [{ configId: "m-live", baseUrl: "https://example.invalid/v1", model: "mock-model" }],
+          save: async () => ({ configId: "m-live", baseUrl: "https://example.invalid/v1", model: "mock-model" }),
+        },
+        credential: { status: async () => ({ configured: true, availability: "available" }), save: async () => ({ configured: true }) },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await user.type(screen.getByRole("textbox", { name: "Task or continuation" }), "Inspect the fixture");
+      await user.click(screen.getByRole("button", { name: "Run" }));
+
+      await user.click(screen.getByRole("button", { name: "Stop run" }));
+      expect(cancel).toHaveBeenCalledWith("run-active");
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
   });
 
   it("confirms a detector candidate by id without exposing a working directory", async () => {
@@ -148,8 +185,8 @@ describe("Codex-style workbench", () => {
 
     try {
       render(<WorkbenchApp locale="en-US" />);
-      await user.click(screen.getByRole("button", { name: /选择工作区/ }));
-      await user.click(screen.getByRole("button", { name: "Confirm test candidate" }));
+      await user.click(screen.getByRole("button", { name: "Select workspace" }));
+      await user.click(screen.getByRole("button", { name: "Confirm candidate command" }));
 
       expect(confirmations).toEqual([["p-candidate", "node.test"]]);
       expect(screen.queryByText(/C:\\|Users|workspaceRoot/i)).not.toBeInTheDocument();

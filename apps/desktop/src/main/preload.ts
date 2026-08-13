@@ -27,6 +27,17 @@ contextBridge.exposeInMainWorld("todex", {
     get: (runId: string) => invoke("run.get", { runId }),
     snapshot: (runId: string) => invoke("run.snapshot", { runId }),
     cancel: (runId: string) => invoke("run.cancel", { runId }),
+    subscribe: (runId: string, listener: (snapshot: unknown) => void) => {
+      const handler = (_event: unknown, snapshot: unknown) => {
+        if (typeof snapshot === "object" && snapshot !== null && "run" in snapshot) {
+          const run = (snapshot as { run?: unknown }).run;
+          if (typeof run === "object" && run !== null && (run as { runId?: unknown }).runId === runId) listener(snapshot);
+        }
+      };
+      ipcRenderer.on("run.update", handler);
+      void invoke("run.subscribe", { runId });
+      return () => { ipcRenderer.removeListener("run.update", handler); void invoke("run.unsubscribe", { runId }); };
+    },
   },
   approval: {
     listPending: (projectId: string) => invoke("approval.listPending", { projectId }),

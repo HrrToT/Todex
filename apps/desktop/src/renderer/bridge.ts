@@ -17,6 +17,7 @@ export interface TodexPreloadSurface {
     start(input: { projectId: string; task: string; modelConfigId: string; verificationCommandId?: string }): Promise<unknown>;
     snapshot(runId: string): Promise<unknown>;
     cancel(runId: string): Promise<unknown>;
+    subscribe(runId: string, listener: (snapshot: unknown) => void): () => void;
   };
   project?: {
     importSelectedWorkspace(): Promise<DesktopProjectProjection | undefined>;
