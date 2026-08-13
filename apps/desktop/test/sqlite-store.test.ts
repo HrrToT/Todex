@@ -30,15 +30,27 @@ afterEach(() => {
 });
 
 describe("SQLiteStore", () => {
-  it("migrates a fresh database to version 2 and reopens idempotently", () => {
+  it("migrates a fresh database to version 3 and reopens idempotently", () => {
     const databasePath = createDatabasePath();
     const first = SQLiteStore.open({ databasePath });
 
-    expect(first.getMigrationVersion()).toBe(2);
+    expect(first.getMigrationVersion()).toBe(3);
     first.close();
 
     const reopened = SQLiteStore.open({ databasePath });
-    expect(reopened.getMigrationVersion()).toBe(2);
+    expect(reopened.getMigrationVersion()).toBe(3);
+    reopened.close();
+  });
+
+  it("persists the selected locale across store reopen", () => {
+    const databasePath = createDatabasePath();
+    const first = SQLiteStore.open({ databasePath });
+    expect(first.getLocale()).toBe("zh-CN");
+    expect(first.setLocale("en-US")).toBe("en-US");
+    first.close();
+
+    const reopened = SQLiteStore.open({ databasePath });
+    expect(reopened.getLocale()).toBe("en-US");
     reopened.close();
   });
 
@@ -63,7 +75,7 @@ describe("SQLiteStore", () => {
 
     const store = SQLiteStore.open({ databasePath });
 
-    expect(store.getMigrationVersion()).toBe(2);
+    expect(store.getMigrationVersion()).toBe(3);
     expect(store.listColumns("credential_clear_pending")).toContain("credential_ref");
     store.close();
   });

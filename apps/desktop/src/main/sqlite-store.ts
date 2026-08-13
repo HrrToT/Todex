@@ -15,7 +15,7 @@ import {
 } from "@todex/contracts";
 import { z } from "zod";
 
-const LATEST_SCHEMA_VERSION = 2;
+const LATEST_SCHEMA_VERSION = 3;
 
 const projectSchema = z
   .object({
@@ -111,6 +111,7 @@ export class SQLiteStore {
       "approval_requests",
       "memory_entries",
       "credential_clear_pending",
+      "app_settings",
     ]);
     if (!allowedTables.has(tableName)) {
       throw new Error("unknown_table");
@@ -262,6 +263,21 @@ export class SQLiteStore {
     this.inTransaction(() => {
       this.database.prepare("DELETE FROM credential_clear_pending WHERE config_id = ?").run(configId);
     });
+  }
+
+  getLocale(): "zh-CN" | "en-US" {
+    const row = this.database.prepare("SELECT value FROM app_settings WHERE key = 'locale'").get() as Row | undefined;
+    return row ? z.enum(["zh-CN", "en-US"]).parse(row.value) : "zh-CN";
+  }
+
+  setLocale(locale: "zh-CN" | "en-US"): "zh-CN" | "en-US" {
+    const parsed = z.enum(["zh-CN", "en-US"]).parse(locale);
+    this.inTransaction(() => {
+      this.database
+        .prepare("INSERT INTO app_settings (key, value) VALUES ('locale', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .run(parsed);
+    });
+    return parsed;
   }
 
   saveCommand(command: ConfiguredCommand): ConfiguredCommand {
@@ -676,6 +692,15 @@ export class SQLiteStore {
         database
           .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
           .run(2, new Date().toISOString());
+      })();
+      version = 2;
+    }
+    if (version === 2) {
+      database.transaction(() => {
+        database.exec("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);");
+        database
+          .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
+          .run(3, new Date().toISOString());
       })();
     }
   }

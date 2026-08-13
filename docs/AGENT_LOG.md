@@ -1,6 +1,7 @@
 # Todex Agent ????
 
 | 2026-08-13T14:10:00+08:00 | T-013 review rework | Codex TDD and focused desktop checks | Closed renderer command construction and path-projection boundaries, per-project concurrent runs, model and approved-command cancellation, candidate confirmation UI, and session locale switching. | RED: cancellation E2Es timed out before abort hooks and locale-switch UI was absent. GREEN: focused workbench 10/10, IPC/E2E and harness checks passed locally; typecheck passed. | Locale persistence, independent review, CI, installed-app manual acceptance and real-model acceptance remain open. | Do not claim the local implementation as released or fully accepted. |
+| 2026-08-13T14:30:00+08:00 | T-013 locale and projection rework | Codex TDD and IPC review | Added fixed locale settings IPC and SQLite migration v3; removed local absolute path, task text and credential-reference exposure from renderer query projections. | RED: settings channels, locale persistence behavior, and projection-leak tests failed before implementation. GREEN: IPC 13/13 and workbench 10/10 passed; SQLite native reopen test remains blocked only by missing Node 24 ABI 137 binding. | Node 20 CI must execute SQLite migration/reopen tests; independent review and manual acceptance remain open. | Do not treat this Node 24 native binding error as a product test pass. |
 
 ???active
 ?????2026-07-19

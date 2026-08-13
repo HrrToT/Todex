@@ -753,6 +753,7 @@ interactive visual acceptance.
 - [x] Every desktop `run_configured_command` requires an explicit approval decision before dispatch; normal read/search/safe patch remain governed automatic actions.
 - [x] Focused desktop E2E proves safe patch -> zero command dispatch before approval -> approved fixed argv -> finish, with a credential sentinel absent from projections and traces.
 - [x] T-013 review rework closes candidate-derived command confirmation, local-path projection, one-active-run-per-project and cancellation of in-flight model requests and approved fixed commands; the live workbench also exposes a session-local Chinese/English toggle.
+- [x] Locale preference is now constrained to `zh-CN`/`en-US`, persisted through the main-process SQLite settings store, and exposed only through `settings.getLocale`/`settings.setLocale`; all renderer-accessible workspace/model/run queries now use redacted projections.
 - [ ] Independent specification/security review, GitHub CI, and Windows installed-app manual acceptance remain required before release.
 - [ ] Local complete Vitest evidence remains blocked by missing `better-sqlite3` Node ABI 137 binding under Node 24.14.0; do not suppress the existing SQLite/WorkspaceHost tests.
 

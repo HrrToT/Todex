@@ -1,4 +1,4 @@
-import { memoryEntrySchema, type ApprovalScope } from "@todex/contracts";
+import { memoryEntrySchema, type ApprovalScope, type RunSession, type ToolResult, type TraceEvent } from "@todex/contracts";
 import { z } from "zod";
 
 import { randomUUID } from "node:crypto";
@@ -39,6 +39,8 @@ export const TODexIpcChannels = [
   "credential.status",
   "credential.save",
   "credential.clear",
+  "settings.getLocale",
+  "settings.setLocale",
 ] as const;
 
 const emptySchema = z.object({}).strict();
@@ -59,6 +61,7 @@ const credentialConfigSchema = z.object({ configId: z.string().min(1) }).strict(
 const credentialSaveSchema = z
   .object({ configId: z.string().min(1), apiKey: z.string().min(1) })
   .strict();
+const localeSchema = z.object({ locale: z.enum(["zh-CN", "en-US"]) }).strict();
 
 export function registerTodexIpc(
   ipcMain: IpcMainLike,
@@ -66,7 +69,10 @@ export function registerTodexIpc(
   workspaceSelector?: Pick<WorkspaceSelector, "choose">,
   runService?: DesktopRunService,
 ): void {
-  register(ipcMain, "workspace.choose", emptySchema, () => workspaceSelector?.choose());
+  register(ipcMain, "workspace.choose", emptySchema, async () => {
+    const selected = await workspaceSelector?.choose();
+    return selected ? Object.freeze({ displayName: selected.displayName }) : undefined;
+  });
   register(ipcMain, "project.importSelectedWorkspace", emptySchema, async () => {
     const selected = await workspaceSelector?.choose();
     if (!selected) return undefined;
@@ -85,10 +91,10 @@ export function registerTodexIpc(
     return project ? projectProjection(project) : undefined;
   });
   register(ipcMain, "project.delete", projectIdSchema, (input) => host.store.deleteProject(input.projectId));
-  register(ipcMain, "model.list", projectIdSchema, (input) => host.store.listModelConfigs(input.projectId));
+  register(ipcMain, "model.list", projectIdSchema, (input) => host.store.listModelConfigs(input.projectId).map(modelProjection));
   register(ipcMain, "model.save", modelConfigSchema, (input) => {
     const now = new Date().toISOString();
-    return host.store.saveModelConfig({ configId: input.configId ?? randomUUID(), projectId: input.projectId, baseUrl: input.baseUrl, model: input.model, parametersJson: "{}", createdAt: now, updatedAt: now });
+    return modelProjection(host.store.saveModelConfig({ configId: input.configId ?? randomUUID(), projectId: input.projectId, baseUrl: input.baseUrl, model: input.model, parametersJson: "{}", createdAt: now, updatedAt: now }));
   });
 
   register(ipcMain, "command.list", projectIdSchema, (input) => host.store.listCommands(input.projectId).map(commandProjection));
@@ -110,16 +116,20 @@ export function registerTodexIpc(
   });
   register(ipcMain, "command.remove", commandIdSchema, (input) => host.store.removeCommand(input.commandId));
 
-  register(ipcMain, "run.list", projectIdSchema, (input) => host.store.listRuns(input.projectId));
-  register(ipcMain, "run.start", runStartSchema, (input) => {
+  register(ipcMain, "run.list", projectIdSchema, (input) => host.store.listRuns(input.projectId).map(runSessionProjection));
+  register(ipcMain, "run.start", runStartSchema, async (input) => {
     if (!runService) throw new Error("host_operation_failed");
-    return runService.start(input);
+    return runProjection(await runService.start(input));
   });
   register(ipcMain, "run.snapshot", runIdSchema, (input) => {
     if (!runService) throw new Error("host_operation_failed");
-    return runService.snapshot(input.runId);
+    const snapshot = runService.snapshot(input.runId);
+    return snapshot ? runProjection(snapshot) : undefined;
   });
-  register(ipcMain, "run.get", runIdSchema, (input) => host.store.getRun(input.runId));
+  register(ipcMain, "run.get", runIdSchema, (input) => {
+    const run = host.store.getRun(input.runId);
+    return run ? runSessionProjection(run) : undefined;
+  });
   register(ipcMain, "run.cancel", runIdSchema, (input) =>
     runService ? runService.cancel(input.runId) : host.store.updateRunStatus({
       runId: input.runId, status: "cancelled", endedAt: new Date().toISOString(), stopReason: "cancelled_by_user",
@@ -129,10 +139,10 @@ export function registerTodexIpc(
   register(ipcMain, "approval.listPending", projectIdSchema, (input) =>
     host.store.listPendingApprovals(input.projectId),
   );
-  register(ipcMain, "approval.decide", runApprovalSchema, (input) => {
+  register(ipcMain, "approval.decide", runApprovalSchema, async (input) => {
     if (runService) {
       if (!input.runId) throw new Error("invalid_ipc_input");
-      return runService.decideApproval({ ...input, runId: input.runId });
+      return runProjection(await runService.decideApproval({ ...input, runId: input.runId }));
     }
     const approval = host.store
       .listPendingApprovals()
@@ -163,6 +173,8 @@ export function registerTodexIpc(
   register(ipcMain, "credential.clear", credentialConfigSchema, (input) =>
     host.clearCredential(input.configId),
   );
+  register(ipcMain, "settings.getLocale", emptySchema, () => ({ locale: host.store.getLocale() }));
+  register(ipcMain, "settings.setLocale", localeSchema, (input) => ({ locale: host.store.setLocale(input.locale) }));
 }
 
 const detectedProfileSchema = z.object({
@@ -204,6 +216,46 @@ function commandProjection(command: { readonly commandId: string; readonly proje
     timeoutMs: command.timeoutMs,
     confirmedByUser: command.confirmedByUser,
     ...(command.lastResult ? { lastResult: command.lastResult } : {}),
+  });
+}
+
+function modelProjection(model: { readonly configId: string; readonly projectId?: string; readonly baseUrl: string; readonly model: string; readonly createdAt: string; readonly updatedAt: string }) {
+  return Object.freeze({
+    configId: model.configId,
+    ...(model.projectId ? { projectId: model.projectId } : {}),
+    baseUrl: model.baseUrl,
+    model: model.model,
+    createdAt: model.createdAt,
+    updatedAt: model.updatedAt,
+  });
+}
+
+function runSessionProjection(run: RunSession) {
+  return Object.freeze({
+    runId: run.runId,
+    projectId: run.projectId,
+    status: run.status,
+    startedAt: run.startedAt,
+    ...(run.endedAt ? { endedAt: run.endedAt } : {}),
+    repairAttempts: run.repairAttempts,
+    ...(run.stopReason ? { stopReason: run.stopReason } : {}),
+  });
+}
+
+function runProjection(snapshot: { readonly run: RunSession; readonly trace: readonly TraceEvent[]; readonly results: readonly ToolResult[]; readonly pendingApproval?: { readonly approvalId: string; readonly actionId: string; readonly tool: string; readonly riskReasons: readonly string[]; readonly state: string; readonly createdAt: string; readonly expiresAt?: string } }) {
+  return Object.freeze({
+    run: runSessionProjection(snapshot.run),
+    trace: Object.freeze(snapshot.trace.map((event) => Object.freeze({ eventId: event.eventId, type: event.type, timestamp: event.timestamp, payloadSummary: event.payloadSummary }))),
+    results: Object.freeze(snapshot.results.map((result) => Object.freeze({ resultId: result.resultId, actionId: result.actionId, status: result.status, summary: result.summary }))),
+    ...(snapshot.pendingApproval ? { pendingApproval: Object.freeze({
+      approvalId: snapshot.pendingApproval.approvalId,
+      actionId: snapshot.pendingApproval.actionId,
+      tool: snapshot.pendingApproval.tool,
+      riskReasons: Object.freeze([...snapshot.pendingApproval.riskReasons]),
+      state: snapshot.pendingApproval.state,
+      createdAt: snapshot.pendingApproval.createdAt,
+      ...(snapshot.pendingApproval.expiresAt ? { expiresAt: snapshot.pendingApproval.expiresAt } : {}),
+    }) } : {}),
   });
 }
 

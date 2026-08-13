@@ -52,6 +52,8 @@ const EXPECTED_CHANNELS = [
   "credential.status",
   "credential.save",
   "credential.clear",
+  "settings.getLocale",
+  "settings.setLocale",
 ];
 
 describe("desktop IPC", () => {
@@ -78,6 +80,17 @@ describe("desktop IPC", () => {
     expect(ipcMain.handlers.has("workspace.choose")).toBe(true);
     expect(ipcMain.handlers.has("filesystem.read")).toBe(false);
     expect(ipcMain.handlers.has("filesystem.write")).toBe(false);
+  });
+
+  it("projects native workspace selection without returning its absolute path", async () => {
+    const ipcMain = new FakeIpcMain();
+    const selector = { choose: vi.fn().mockResolvedValue({ workspaceRoot: "C:\\Users\\Lenovo\\private-repo", displayName: "private-repo" }) };
+    registerTodexIpc(ipcMain, {} as never, selector);
+
+    const selected = await ipcMain.handlers.get("workspace.choose")?.({}, {});
+
+    expect(selected).toEqual({ displayName: "private-repo" });
+    expect(JSON.stringify(selected)).not.toContain("C:\\Users\\Lenovo");
   });
 
   it("projects imported projects without a local workspace path while retaining command candidates", async () => {
@@ -150,6 +163,24 @@ describe("desktop IPC", () => {
     ).not.toContain("secret-value");
   });
 
+  it("persists only the supported locale through intention-level settings IPC", async () => {
+    const ipcMain = new FakeIpcMain();
+    const host = {
+      store: {
+        getLocale: vi.fn(() => "zh-CN"),
+        setLocale: vi.fn((locale: string) => locale),
+      },
+    };
+    registerTodexIpc(ipcMain, host as never);
+
+    await expect(ipcMain.handlers.get("settings.getLocale")?.({}, {})).resolves.toEqual({ locale: "zh-CN" });
+    await expect(ipcMain.handlers.get("settings.setLocale")?.({}, { locale: "en-US" })).resolves.toEqual({ locale: "en-US" });
+    await expect(ipcMain.handlers.get("settings.setLocale")?.({}, { locale: "fr-FR" })).rejects.toThrow("invalid_ipc_input");
+    await expect(ipcMain.handlers.get("settings.setLocale")?.({}, { locale: "zh-CN", key: "arbitrary" })).rejects.toThrow("invalid_ipc_input");
+
+    expect(host.store.setLocale).toHaveBeenCalledWith("en-US");
+  });
+
   it("exposes only high-level run intent to the main-process service", async () => {
     const ipcMain = new FakeIpcMain();
     const service = {
@@ -168,6 +199,49 @@ describe("desktop IPC", () => {
     await expect(
       ipcMain.handlers.get("run.start")?.({}, { projectId: "p1", task: "x", modelConfigId: "m1", workspaceRoot: "C:\\outside" }),
     ).rejects.toThrow("invalid_ipc_input");
+  });
+
+  it("returns a redacted run projection instead of the original task text", async () => {
+    const ipcMain = new FakeIpcMain();
+    const service = {
+      start: vi.fn().mockResolvedValue({
+        run: { runId: "run-1", projectId: "p1", taskText: "API_KEY=secret-value", status: "running", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 },
+        trace: [], results: [],
+      }),
+      snapshot: vi.fn(), cancel: vi.fn(), decideApproval: vi.fn(),
+    } as unknown as DesktopRunService;
+    const host = { store: { listProjects: vi.fn(), getProject: vi.fn(), listCommands: vi.fn(), listRuns: vi.fn(), getRun: vi.fn(), listPendingApprovals: vi.fn(), listMemories: vi.fn() } };
+    registerTodexIpc(ipcMain, host as never, undefined, service);
+
+    const snapshot = await ipcMain.handlers.get("run.start")?.({}, { projectId: "p1", task: "API_KEY=secret-value", modelConfigId: "m1" });
+
+    expect(snapshot).toMatchObject({ run: { runId: "run-1", status: "running" }, trace: [], results: [] });
+    expect(JSON.stringify(snapshot)).not.toContain("secret-value");
+    expect(JSON.stringify(snapshot)).not.toContain("taskText");
+  });
+
+  it("keeps task text and credential references out of all renderer query projections", async () => {
+    const ipcMain = new FakeIpcMain();
+    const rawRun = { runId: "run-1", projectId: "p1", taskText: "API_KEY=secret-value", status: "completed", startedAt: "2026-08-13T00:00:00.000Z", repairAttempts: 0 };
+    const rawModel = { configId: "m1", projectId: "p1", baseUrl: "https://models.example.invalid/v1", model: "model", parametersJson: "{}", credentialRef: "credential-private-ref", createdAt: "2026-08-13T00:00:00.000Z", updatedAt: "2026-08-13T00:00:00.000Z" };
+    const host = {
+      store: {
+        listRuns: vi.fn(() => [rawRun]), getRun: vi.fn(() => rawRun),
+        listModelConfigs: vi.fn(() => [rawModel]), saveModelConfig: vi.fn(() => rawModel),
+      },
+    };
+    registerTodexIpc(ipcMain, host as never);
+
+    const values = await Promise.all([
+      ipcMain.handlers.get("run.list")?.({}, { projectId: "p1" }),
+      ipcMain.handlers.get("run.get")?.({}, { runId: "run-1" }),
+      ipcMain.handlers.get("model.list")?.({}, { projectId: "p1" }),
+    ]);
+
+    expect(JSON.stringify(values)).not.toContain("secret-value");
+    expect(JSON.stringify(values)).not.toContain("taskText");
+    expect(JSON.stringify(values)).not.toContain("credential-private-ref");
+    expect(JSON.stringify(values)).not.toContain("credentialRef");
   });
 
   it("confirms only a persisted detector candidate instead of renderer-supplied argv", async () => {

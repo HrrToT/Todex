@@ -42,4 +42,8 @@ contextBridge.exposeInMainWorld("todex", {
     save: (configId: string, apiKey: string) => invoke("credential.save", { configId, apiKey }),
     clear: (configId: string) => invoke("credential.clear", { configId }),
   },
+  settings: {
+    getLocale: () => invoke("settings.getLocale", {}),
+    setLocale: (locale: "zh-CN" | "en-US") => invoke("settings.setLocale", { locale }),
+  },
 });

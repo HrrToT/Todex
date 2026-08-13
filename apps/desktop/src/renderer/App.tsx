@@ -63,8 +63,16 @@ export interface WorkbenchAppProps {
 
 export function WorkbenchApp({ approvalBridge, onApprovalDecision, locale = "zh-CN" }: WorkbenchAppProps): JSX.Element {
   const [activeLocale, setActiveLocale] = useState<Locale>(locale);
+  useEffect(() => {
+    void window.todex?.settings?.getLocale().then((result) => setActiveLocale(result.locale)).catch(() => undefined);
+  }, []);
+  const toggleLocale = useCallback(() => {
+    const next = activeLocale === "zh-CN" ? "en-US" : "zh-CN";
+    setActiveLocale(next);
+    void window.todex?.settings?.setLocale(next).catch(() => setActiveLocale(activeLocale));
+  }, [activeLocale]);
   return preloadRunBridge()
-    ? <LiveWorkbenchApp locale={activeLocale} onToggleLocale={() => setActiveLocale((value) => value === "zh-CN" ? "en-US" : "zh-CN")} />
+    ? <LiveWorkbenchApp locale={activeLocale} onToggleLocale={toggleLocale} />
     : <DemoWorkbenchApp approvalBridge={approvalBridge} onApprovalDecision={onApprovalDecision} locale={activeLocale} />;
 }
 

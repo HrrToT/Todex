@@ -58,7 +58,11 @@ and confirms that the password field is cleared after save.
   and the terminal projection is `cancelled`.
 - The live workbench now exposes a Chinese/English text toggle. Its interaction test confirms the
   locale change keeps the governed preload run bridge intact. Locale persistence across a desktop
-  restart remains pending and is not claimed by this record.
+  restart now uses a fixed `app_settings.locale` SQLite value and the narrow
+  `settings.getLocale` / `settings.setLocale` IPC pair. The only accepted values are `zh-CN` and
+  `en-US`; unknown values and extra input are rejected. The renderer query projections for workspace
+  selection, projects, models and runs omit absolute paths, task text, stored command directories,
+  credential references and model parameter storage fields.
 
 ## Security Evidence
 
@@ -68,4 +72,4 @@ and confirms that the password field is cleared after save.
 
 ## Remaining Evidence Boundary
 
-No actual external model request, real API key, user repository mutation, real command, installed Windows Electron interaction, external Mock HTTP server fixture, PR, CI, or release was claimed by this record. A full-suite attempt passed all non-native suites and failed 17 existing SQLite/WorkspaceHost tests because the local Node 24 runtime could not load the missing `better-sqlite3` ABI 137 binding.
+No actual external model request, real API key, user repository mutation, real command, installed Windows Electron interaction, external Mock HTTP server fixture, PR, CI, or release was claimed by this record. The local Node 24 runtime cannot load the missing `better-sqlite3` ABI 137 binding, so the existing SQLite/WorkspaceHost suite and the new locale reopen test require Windows Node 20 CI evidence. This environment limitation is not suppressed or counted as a passing local native test.

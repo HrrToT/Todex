@@ -1,12 +1,13 @@
 import type { ApprovalDecision } from "./run-controller.js";
 import type { LiveRunBridge } from "./run-controller.js";
+import type { Locale } from "./i18n.js";
 
 export interface ApprovalBridge {
   decide(input: { approvalId: string; decision: ApprovalDecision; runId?: string }): Promise<unknown>;
 }
 
 export interface WorkspaceSelectionBridge {
-  choose(): Promise<{ workspaceRoot: string; displayName: string } | undefined>;
+  choose(): Promise<{ displayName: string } | undefined>;
 }
 
 export interface TodexPreloadSurface {
@@ -33,6 +34,10 @@ export interface TodexPreloadSurface {
   credential?: {
     status(configId: string): Promise<{ configured: boolean; availability: "available" | "unavailable" }>;
     save(configId: string, apiKey: string): Promise<{ configured: true }>;
+  };
+  settings?: {
+    getLocale(): Promise<{ locale: Locale }>;
+    setLocale(locale: Locale): Promise<{ locale: Locale }>;
   };
 }
 

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { WorkbenchApp } from "../src/renderer/App.js";
 import { preloadApprovalBridge } from "../src/renderer/bridge.js";
@@ -36,6 +36,7 @@ describe("Codex-style workbench", () => {
 
   it("switches the live workbench copy without changing the governed bridge", async () => {
     const user = userEvent.setup();
+    const setLocale = vi.fn().mockResolvedValue({ locale: "en-US" });
     Object.defineProperty(window, "todex", {
       configurable: true,
       value: {
@@ -43,6 +44,7 @@ describe("Codex-style workbench", () => {
         project: { importSelectedWorkspace: async () => undefined, list: async () => [] },
         model: { list: async () => [], save: async () => ({ configId: "m1", baseUrl: "https://example.invalid/v1", model: "test-model" }) },
         credential: { status: async () => ({ configured: false, availability: "available" }), save: async () => ({ configured: true }) },
+        settings: { getLocale: async () => ({ locale: "zh-CN" as const }), setLocale },
       },
     });
 
@@ -52,6 +54,7 @@ describe("Codex-style workbench", () => {
 
       expect(screen.getByRole("button", { name: "Chinese" })).toBeVisible();
       expect(screen.getByRole("textbox", { name: "Task or continuation" })).toBeVisible();
+      expect(setLocale).toHaveBeenCalledWith("en-US");
       expect(window.todex?.run).toBeDefined();
     } finally {
       Object.defineProperty(window, "todex", { configurable: true, value: undefined });
