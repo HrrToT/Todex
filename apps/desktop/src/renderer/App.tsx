@@ -22,7 +22,7 @@ import {
   type StreamEvent,
   type WorkbenchSnapshot,
 } from "./run-controller.js";
-import { preloadRunBridge, type ApprovalBridge, type DesktopCommandCandidate, type DesktopConfiguredCommand, type DesktopProjectProjection } from "./bridge.js";
+import { resolveWorkbenchMode, type ApprovalBridge, type DesktopCommandCandidate, type DesktopConfiguredCommand, type DesktopProjectProjection } from "./bridge.js";
 import { t, type Locale, type MessageKey } from "./i18n.js";
 import "./styles.css";
 
@@ -71,9 +71,36 @@ export function WorkbenchApp({ approvalBridge, onApprovalDecision, locale = "zh-
     setActiveLocale(next);
     void window.todex?.settings?.setLocale(next).catch(() => setActiveLocale(activeLocale));
   }, [activeLocale]);
-  return preloadRunBridge()
-    ? <LiveWorkbenchApp locale={activeLocale} onToggleLocale={toggleLocale} />
-    : <DemoWorkbenchApp approvalBridge={approvalBridge} onApprovalDecision={onApprovalDecision} locale={activeLocale} />;
+  const mode = resolveWorkbenchMode();
+  if (mode === "live") return <LiveWorkbenchApp locale={activeLocale} onToggleLocale={toggleLocale} />;
+  if (mode === "diagnostic") return <DesktopBridgeUnavailable locale={activeLocale} />;
+  return <DemoWorkbenchApp approvalBridge={approvalBridge} onApprovalDecision={onApprovalDecision} locale={activeLocale} />;
+}
+
+function DesktopBridgeUnavailable({ locale }: { locale: Locale }): JSX.Element {
+  return (
+    <main className="workbench-shell" data-testid="desktop-bridge-unavailable">
+      <section className="execution-area" role="status" aria-live="polite">
+        <header className="stream-header">
+          <div className="brand-mark" aria-label="Todex">
+            <Command size={18} aria-hidden="true" />
+            <span>Todex</span>
+          </div>
+        </header>
+        <div className="stream-scroll">
+          <div className="execution-stream">
+            <article className="stream-event verification">
+              <span className="event-icon"><ShieldAlert size={18} aria-hidden="true" /></span>
+              <div className="event-content">
+                <strong>{t(locale, "desktop.bridgeUnavailableTitle")}</strong>
+                <span>{t(locale, "desktop.bridgeUnavailableMessage")}</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
 }
 
 function DemoWorkbenchApp({ approvalBridge, onApprovalDecision, locale = "zh-CN" }: WorkbenchAppProps): JSX.Element {

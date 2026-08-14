@@ -54,6 +54,8 @@ export type MessageKey =
   | "live.notice.completeSetup"
   | "live.notice.runUpdated"
   | "live.stopRun"
+  | "desktop.bridgeUnavailableTitle"
+  | "desktop.bridgeUnavailableMessage"
   | "phase.idle"
   | "phase.running"
   | "phase.awaitingApproval"
@@ -136,6 +138,8 @@ const messages: Readonly<Record<Locale, Messages>> = Object.freeze({
     "live.notice.completeSetup": "请先选择工作区、模型并填写任务",
     "live.notice.runUpdated": "运行状态已更新",
     "live.stopRun": "停止运行",
+    "desktop.bridgeUnavailableTitle": "桌面服务不可用",
+    "desktop.bridgeUnavailableMessage": "请重启 Todex；若问题仍存在，请安装最新桌面版。",
     "phase.idle": "空闲",
     "phase.running": "运行中",
     "phase.awaitingApproval": "等待审批",
@@ -214,6 +218,8 @@ const messages: Readonly<Record<Locale, Messages>> = Object.freeze({
     "live.notice.completeSetup": "Select a workspace and model, then enter a task",
     "live.notice.runUpdated": "Run status updated",
     "live.stopRun": "Stop run",
+    "desktop.bridgeUnavailableTitle": "Desktop service unavailable",
+    "desktop.bridgeUnavailableMessage": "Restart Todex. If this persists, install the latest desktop release.",
     "phase.idle": "Idle",
     "phase.running": "Running",
     "phase.awaitingApproval": "Awaiting approval",

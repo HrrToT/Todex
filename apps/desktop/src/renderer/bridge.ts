@@ -43,6 +43,8 @@ export interface TodexPreloadSurface {
   };
 }
 
+export type WorkbenchMode = "live" | "demo" | "diagnostic";
+
 export interface DesktopCommandCandidate {
   readonly candidateId: string;
   readonly purpose: "test" | "lint" | "typecheck" | "build";
@@ -68,6 +70,14 @@ export interface DesktopProjectProjection {
 
 export function preloadRunBridge(surface: TodexPreloadSurface | undefined = window.todex): LiveRunBridge | undefined {
   return surface?.run;
+}
+
+export function resolveWorkbenchMode(
+  surface: TodexPreloadSurface | undefined = window.todex,
+  userAgent = window.navigator.userAgent,
+): WorkbenchMode {
+  if (surface?.run) return "live";
+  return /\bElectron\/\d/i.test(userAgent) ? "diagnostic" : "demo";
 }
 
 declare global {
