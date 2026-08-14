@@ -99,12 +99,14 @@ docs/               规约、计划、任务卡、验证证据和过程记录
 
 ## 已知限制
 
-### T-013 本地真实 Agent（待审查和验收）
+### T-013 受治理真实 Agent（已集成，待人工验收）
 
-桌面端的 T-013 实现已在本地完成：用户可通过原生目录选择器导入本地 Node.js 或
-Python 项目，保存一个 OpenAI Chat Completions 兼容的 `baseUrl` 与模型名称，并在
-Windows Credential Manager 保存 API Key。运行时 API Key 仅由 Electron main process
-读取；不会被写入 SQLite、trace、导出数据或 Renderer 运行投影。
+T-013 已通过 [PR #19](https://github.com/HrrToT/Todex/pull/19) 合并到 `main`，其最终
+CI [run 31708987042](https://github.com/HrrToT/Todex/actions/runs/31708987042) 已通过。
+源码中的桌面端允许用户通过原生目录选择器导入本地 Node.js 或 Python 项目，并保存一个
+OpenAI Chat Completions 兼容的 `baseUrl` 与模型名称。API Key 不由 GUI 收集或传过 IPC；
+必须预先通过 Windows Credential Manager 配置，运行时仅由 Electron main process 读取，
+不会被写入 SQLite、trace、导出数据或 Renderer 运行投影。
 
 真实运行仍有明确治理边界：工作区内的读取、搜索和普通 unified diff 补丁可自动执行；
 每次已确认命令都必须先经过人工审批，审批前不会启动子进程。目录逃逸、符号链接逃逸、
@@ -112,16 +114,18 @@ Windows Credential Manager 保存 API Key。运行时 API Key 仅由 Electron ma
 首次非法响应只会得到一次 JSON-only 格式修复请求，第二次非法响应停止为
 `model_protocol_invalid`。
 
-这不是已发布的任意仓库 Agent 验收结论。T-013 尚待独立规约/安全审查、GitHub CI、
-Windows 安装包中的手工真实模型验收。Render Demo 继续严格为固定 Mock 场景，不能输入
-真实 API Key、本地路径、任意命令、补丁、文件上传或模型 URL。
+这不是已发布的任意仓库 Agent 验收结论。T-013 仍待独立规约/安全审查、Windows 安装包
+中的手工交互验收，以及在用户选择的非敏感仓库上的范围受控真实模型验收。Render Demo
+继续严格为固定 Mock 场景，不能输入真实 API Key、本地路径、任意命令、补丁、文件上传
+或模型 URL。
 
 - 当前正式桌面发布仅面向 Windows x64；macOS 和 Linux 不在本版本发布范围内。
 - `v0.1.0` 的安装版存在已确认的 Renderer 白屏问题；请使用已发布的
   `v0.1.1`。正式安装后的可见工作台内容仍应由使用者完成一次人工确认；安装文件
   与静态包内容核验不等同于完整交互式 Agent 验收。
-- 当前桌面工作台是受治理流程的 UI 原型：其展示的任务、diff 和审批流为确定性
-  演示，不会在 GUI 中对任意本地仓库发起真实模型调用、文件修改或 shell 执行。
+- `v0.1.1` 早于 T-013 合并，因此不包含本节所述的真实 Agent 集成。当前 `main` 的
+  源码包含受治理的真实模型、文件操作和固定配置命令路径；每次确认命令与高风险补丁
+  仍须人工审批，不能视为自治执行器。
 - 已有 T-009 环境中曾记录 Electron 生命周期/关闭阶段的 `0xC0000005`；它不应
   被解释为模型、凭据或工具执行成功/失败的证据。
 - 本项目不是自治执行器。任何真实模型、凭据、文件写入或命令执行都应在桌面端
