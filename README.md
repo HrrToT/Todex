@@ -22,6 +22,9 @@ harness。它将受治理的文件操作、命令验证、人工审批、运行 
   已发布。它包含已合并的 T-013 受治理真实 Agent 路径，并提供
   `Todex-0.1.2-win-x64.exe`、`latest.yml` 和 blockmap。该版本已完成 CI、目标
   Electron smoke、打包和解包应用启动检查；真实外部模型与用户仓库的人工验收仍未完成。
+- 未发布候选：本地 `v0.1.4` 是 T-014 的 Live Agent 收口候选。其构建、预加载
+  smoke 和安装包结构检查已通过；已安装应用验收、真实 OpenAI-compatible 供给方验收、
+  候选 PR CI、合并、tag 与 GitHub Release 均尚未完成，不能作为已发布版本使用。
 
 ## 能力边界
 
@@ -66,11 +69,16 @@ HTTPS Demo URL：
 ```powershell
 $env:TODEX_DEMO_URL = "https://todex-mock-demo.onrender.com"
 $env:TODEX_RELEASE_ARTIFACTS = "apps/desktop/release"
+pnpm.cmd package:desktop-release
+pnpm.cmd verify:desktop-package
 pnpm.cmd verify:release
 ```
 
 `verify:release` 会检查 `Todex-<version>-win-x64.exe`、`latest.yml` 中的更新
-元数据，以及 Demo URL。它不会替代实际安装或界面验收。
+元数据，以及 Demo URL。`verify:desktop-package` 进一步检查候选 `app.asar` 是否包含
+Electron preload、真实运行服务、Renderer 文档与 Live Workbench 标记，以及受限的
+`run.start`、`run.cancel`、`run.subscribe` preload 通道。两者都不会读取用户工作区、
+模型配置或凭据，也都不会替代实际安装、界面或真实模型验收。
 
 Windows 安装包为未签名 NSIS 产物。下载正式发布版本时，Windows SmartScreen
 可能显示未识别应用提示；只应从项目的 GitHub Release 下载，并在安装前核对

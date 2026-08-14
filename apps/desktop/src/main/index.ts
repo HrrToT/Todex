@@ -22,7 +22,7 @@ export interface BrowserWindowConstructor {
 
 export function createDesktopWindow(
   BrowserWindow: BrowserWindowConstructor,
-  preloadPath = fileURLToPath(new URL("./preload.js", import.meta.url)),
+  preloadPath = fileURLToPath(new URL("./preload.cjs", import.meta.url)),
 ): BrowserWindowLike {
   const window = new BrowserWindow({
     width: 1000,

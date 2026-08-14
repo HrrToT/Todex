@@ -3,7 +3,7 @@ import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { WorkbenchApp } from "../src/renderer/App.js";
-import { preloadApprovalBridge } from "../src/renderer/bridge.js";
+import { preloadApprovalBridge, resolveWorkbenchMode } from "../src/renderer/bridge.js";
 
 describe("Codex-style workbench", () => {
   it("adapts the T-009 lowercase preload approval surface", () => {
@@ -11,6 +11,24 @@ describe("Codex-style workbench", () => {
     Object.defineProperty(window, "todex", { configurable: true, value: { approval } });
 
     expect(preloadApprovalBridge()).toBe(approval);
+  });
+
+  it("does not silently render the Demo workbench when Electron loses the run bridge", () => {
+    const originalUserAgent = window.navigator.userAgent;
+    Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    Object.defineProperty(window.navigator, "userAgent", { configurable: true, value: "Electron/36.0 Todex" });
+
+    try {
+      expect(resolveWorkbenchMode(undefined, window.navigator.userAgent)).toBe("diagnostic");
+      render(<WorkbenchApp locale="en-US" />);
+
+      expect(screen.getByTestId("desktop-bridge-unavailable")).toBeVisible();
+      expect(screen.getByRole("status")).toHaveTextContent("Desktop service unavailable");
+      expect(screen.queryByText("calculator-lab")).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window.navigator, "userAgent", { configurable: true, value: originalUserAgent });
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
   });
 
   it("uses the Electron-only live workbench for governed workspace and model setup", () => {

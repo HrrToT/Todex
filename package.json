@@ -1,6 +1,6 @@
 {
   "name": "todex",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.12.1",
@@ -13,9 +13,12 @@
     "lint": "eslint .",
     "build": "pnpm -r build",
     "demo:mechanisms": "tsx scripts/run-mechanism-demo.ts",
+    "package:desktop-release": "pnpm --filter @todex/desktop package:win && pnpm verify:desktop-package",
+    "verify:desktop-package": "tsx scripts/verify-desktop-package.ts",
     "verify:release": "tsx scripts/verify-release.ts"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "@eslint/js": "^9.13.0",
     "@types/node": "^22.7.0",
     "eslint": "^9.13.0",

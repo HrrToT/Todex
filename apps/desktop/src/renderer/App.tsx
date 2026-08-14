@@ -22,7 +22,7 @@ import {
   type StreamEvent,
   type WorkbenchSnapshot,
 } from "./run-controller.js";
-import { preloadRunBridge, type ApprovalBridge, type DesktopCommandCandidate, type DesktopConfiguredCommand, type DesktopProjectProjection } from "./bridge.js";
+import { resolveWorkbenchMode, type ApprovalBridge, type DesktopCommandCandidate, type DesktopConfiguredCommand, type DesktopProjectProjection } from "./bridge.js";
 import { t, type Locale, type MessageKey } from "./i18n.js";
 import "./styles.css";
 
@@ -71,9 +71,36 @@ export function WorkbenchApp({ approvalBridge, onApprovalDecision, locale = "zh-
     setActiveLocale(next);
     void window.todex?.settings?.setLocale(next).catch(() => setActiveLocale(activeLocale));
   }, [activeLocale]);
-  return preloadRunBridge()
-    ? <LiveWorkbenchApp locale={activeLocale} onToggleLocale={toggleLocale} />
-    : <DemoWorkbenchApp approvalBridge={approvalBridge} onApprovalDecision={onApprovalDecision} locale={activeLocale} />;
+  const mode = resolveWorkbenchMode();
+  if (mode === "live") return <LiveWorkbenchApp locale={activeLocale} onToggleLocale={toggleLocale} />;
+  if (mode === "diagnostic") return <DesktopBridgeUnavailable locale={activeLocale} />;
+  return <DemoWorkbenchApp approvalBridge={approvalBridge} onApprovalDecision={onApprovalDecision} locale={activeLocale} />;
+}
+
+function DesktopBridgeUnavailable({ locale }: { locale: Locale }): JSX.Element {
+  return (
+    <main className="workbench-shell" data-testid="desktop-bridge-unavailable">
+      <section className="execution-area" role="status" aria-live="polite">
+        <header className="stream-header">
+          <div className="brand-mark" aria-label="Todex">
+            <Command size={18} aria-hidden="true" />
+            <span>Todex</span>
+          </div>
+        </header>
+        <div className="stream-scroll">
+          <div className="execution-stream">
+            <article className="stream-event verification">
+              <span className="event-icon"><ShieldAlert size={18} aria-hidden="true" /></span>
+              <div className="event-content">
+                <strong>{t(locale, "desktop.bridgeUnavailableTitle")}</strong>
+                <span>{t(locale, "desktop.bridgeUnavailableMessage")}</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
 }
 
 function DemoWorkbenchApp({ approvalBridge, onApprovalDecision, locale = "zh-CN" }: WorkbenchAppProps): JSX.Element {
@@ -350,7 +377,7 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
     if (result && typeof result === "object" && "run" in result) setSnapshot(result as LiveSnapshot);
   }
 
-  return <main className="workbench-shell">
+  return <main className="workbench-shell" data-todex-surface="live-workbench">
     <aside className="workspace-rail" aria-label={t(locale, "workbench.workspaceNavigation")}><div className="brand-mark"><Command size={18} /><span>Todex</span><button type="button" onClick={onToggleLocale}>{locale === "zh-CN" ? "English" : "Chinese"}</button></div>
       <button className="project-switcher" type="button" onClick={() => void importWorkspace()}><FolderKanban size={16} /><span>{project?.displayName ?? t(locale, "live.selectWorkspace")}</span><ChevronRight size={14} /></button>
       <section className="rail-section"><p>{t(locale, "live.modelConfiguration")}</p><label>Base URL<input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.example.com/v1" /></label><label>{t(locale, "live.model")}<input value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="model-name" /></label><button className="run-row selected" type="button" onClick={() => void saveModel()}>{t(locale, "live.saveModelConfiguration")}</button>{model ? (!credentialAvailable ? <p>{t(locale, "live.credentialUnavailable")}</p> : credentialConfigured && !credentialEditorOpen ? <div><p>{t(locale, "live.credentialConfigured")}</p><button type="button" onClick={() => { setApiKey(""); setCredentialEditorOpen(true); }}>{t(locale, "live.updateApiKey")}</button><button type="button" onClick={() => void clearCredential()}>{t(locale, "live.clearApiKey")}</button></div> : <div><label>{t(locale, "live.apiKey")}<input aria-label={t(locale, "live.apiKey")} type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></label><button type="button" onClick={() => void saveCredential()}>{t(locale, "live.saveApiKey")}</button></div>) : <p>{t(locale, "live.apiKeyPlaceholder")}</p>}</section>
