@@ -1,6 +1,6 @@
 {
   "name": "@todex/desktop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "main": "./dist/main/index.js",
@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.build.json && vite build --config vite.renderer.config.ts",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3,keytar",
     "smoke": "pnpm build && electron ./dist/main/smoke.js",
+    "smoke:preload": "pnpm build && electron ./dist/main/preload-smoke.js",
     "smoke:electron": "pnpm run rebuild:native && pnpm run smoke",
     "package:win": "pnpm build && electron-builder --config electron-builder.yml --win nsis --x64"
   },

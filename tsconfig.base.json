@@ -18,6 +18,7 @@
     "packages/*/src/**/*.tsx",
     "packages/*/test/**/*.ts",
     "apps/desktop/src/**/*.ts",
+    "apps/desktop/src/**/*.cts",
     "apps/desktop/src/**/*.tsx",
     "apps/desktop/test/**/*.ts",
     "apps/desktop/test/**/*.tsx",

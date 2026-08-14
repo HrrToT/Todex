@@ -437,6 +437,16 @@ describe("desktop IPC", () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 
+  it("uses a CommonJS preload artifact for the sandboxed renderer", () => {
+    createDesktopWindow(FakeBrowserWindow);
+
+    expect(FakeBrowserWindow.latestOptions).toMatchObject({
+      webPreferences: {
+        preload: expect.stringMatching(/preload\.cjs$/),
+      },
+    });
+  });
+
   it("loads the packaged renderer document instead of an empty data page", () => {
     const window = createDesktopWindow(FakeBrowserWindow);
     const fakeWindow = window as FakeBrowserWindow;

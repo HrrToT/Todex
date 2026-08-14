@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -147,10 +147,12 @@ describe("verifyRelease", () => {
   });
 
   it("uses the root manifest version when the CLI release version is not overridden", async () => {
+    const manifest = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")) as { version: string };
+    const version = manifest.version;
     const installerContents = "candidate-installer";
     const artifactsDir = await makeArtifacts({
-      "Todex-0.1.3-win-x64.exe": installerContents,
-      "latest.yml": `version: 0.1.3\npath: Todex-0.1.3-win-x64.exe\nsha512: ${sha512(installerContents)}\n`,
+      [`Todex-${version}-win-x64.exe`]: installerContents,
+      "latest.yml": `version: ${version}\npath: Todex-${version}-win-x64.exe\nsha512: ${sha512(installerContents)}\n`,
     });
 
     const { stdout } = await execFileAsync(process.execPath, ["--import", "tsx", "scripts/verify-release.ts"], {

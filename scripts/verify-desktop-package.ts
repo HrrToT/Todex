@@ -26,7 +26,8 @@ export type VerifyDesktopPackageOptions = Readonly<{
 
 export const DEFAULT_DESKTOP_PACKAGE_ARCHIVE = "apps/desktop/release/win-unpacked/resources/app.asar";
 
-const PRELOAD_PATH = "dist/main/preload.js";
+const PRELOAD_PATH = "dist/main/preload.cjs";
+const LEGACY_PRELOAD_PATH = "dist/main/preload.js";
 const RUN_SERVICE_PATH = "dist/main/desktop-run-service.js";
 const RENDERER_DOCUMENT_PATH = "dist/renderer/index.html";
 const RENDERER_ASSET_PATH = "dist/renderer/assets/";
@@ -146,7 +147,8 @@ function definesIpcInvokeHelper(sourceFile: ts.SourceFile): boolean {
 function hasPreloadRunBridge(preload: string | undefined): boolean {
   if (!preload) return false;
 
-  const sourceFile = ts.createSourceFile("preload.js", preload, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const sourceFile = ts.createSourceFile("preload.cjs", preload, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  if (sourceFile.statements.some(ts.isImportDeclaration)) return false;
   let bridge: ts.ObjectLiteralExpression | undefined;
   const visit = (node: ts.Node): void => {
     if (bridge || !ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) {
@@ -190,7 +192,7 @@ export async function verifyDesktopPackage(options: VerifyDesktopPackageOptions)
   }
 
   const preloadEntry = entries.get(PRELOAD_PATH);
-  const hasPreload = preloadEntry !== undefined;
+  const hasPreload = preloadEntry !== undefined && !entries.has(LEGACY_PRELOAD_PATH);
   const hasRunService = entries.has(RUN_SERVICE_PATH);
   const rendererDocumentEntry = entries.get(RENDERER_DOCUMENT_PATH);
   const hasRendererDocument = rendererDocumentEntry !== undefined;

@@ -1,4 +1,6 @@
-import { contextBridge, ipcRenderer } from "electron";
+// Electron executes sandbox preload scripts as CommonJS.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { contextBridge, ipcRenderer } = require("electron");
 
 const invoke = (channel: string, input: unknown) => ipcRenderer.invoke(channel, input);
 

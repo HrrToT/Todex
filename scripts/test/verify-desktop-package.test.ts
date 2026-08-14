@@ -25,6 +25,7 @@ async function makeArchive(files: Readonly<Record<string, string>>): Promise<str
 const rendererDocument = '<!doctype html><script type="module" src="/assets/index-live.js"></script>';
 const liveRendererBundle = '<main data-todex-surface="live-workbench"></main>';
 const livePreloadBundle = [
+  "const { contextBridge, ipcRenderer } = require('electron');",
   "const invoke = (channel, input) => ipcRenderer.invoke(channel, input);",
   "contextBridge.exposeInMainWorld('todex', {",
   "  run: {",
@@ -38,7 +39,7 @@ const livePreloadBundle = [
 
 function completeArchiveFiles(): Record<string, string> {
   return {
-    "dist/main/preload.js": livePreloadBundle,
+    "dist/main/preload.cjs": livePreloadBundle,
     "dist/main/desktop-run-service.js": "export class DesktopRunService {}",
     "dist/renderer/index.html": rendererDocument,
     "dist/renderer/assets/index-live.js": liveRendererBundle,
@@ -48,7 +49,7 @@ function completeArchiveFiles(): Record<string, string> {
 describe("verifyDesktopPackage", () => {
   it("reports fixed failed checks for an incomplete archive fixture", async () => {
     const files = completeArchiveFiles();
-    delete files["dist/main/preload.js"];
+    delete files["dist/main/preload.cjs"];
     const archivePath = await makeArchive(files);
 
     const result = await verifyDesktopPackage({ archivePath });
@@ -98,7 +99,7 @@ describe("verifyDesktopPackage", () => {
 
   it("rejects a lookalike preload whose run bridge is exposed under another global", async () => {
     const files = completeArchiveFiles();
-    files["dist/main/preload.js"] = [
+    files["dist/main/preload.cjs"] = [
       "contextBridge.exposeInMainWorld('other', {",
       "  run: {",
       "    start: () => invoke('run.start', {}),",
@@ -117,7 +118,7 @@ describe("verifyDesktopPackage", () => {
 
   it("rejects a todex run object when matching IPC strings are not invoked by its methods", async () => {
     const files = completeArchiveFiles();
-    files["dist/main/preload.js"] = [
+    files["dist/main/preload.cjs"] = [
       "const note = \"invoke('run.start') invoke('run.cancel') invoke('run.subscribe')\";",
       "contextBridge.exposeInMainWorld('todex', {",
       "  run: {",
@@ -137,7 +138,7 @@ describe("verifyDesktopPackage", () => {
 
   it("rejects a bridge when invoke is not the helper bound to ipcRenderer.invoke", async () => {
     const files = completeArchiveFiles();
-    files["dist/main/preload.js"] = [
+    files["dist/main/preload.cjs"] = [
       "const other = () => ipcRenderer.invoke('run.start', {});",
       "contextBridge.exposeInMainWorld('todex', {",
       "  run: {",
@@ -168,13 +169,38 @@ describe("verifyDesktopPackage", () => {
 
   it("requires fixed run IPC channels instead of accepting lookalike method names", async () => {
     const files = completeArchiveFiles();
-    files["dist/main/preload.js"] = "contextBridge.exposeInMainWorld('todex', { run: { start: () => undefined, cancel: () => undefined, subscribe: () => undefined } });";
+    files["dist/main/preload.cjs"] = "contextBridge.exposeInMainWorld('todex', { run: { start: () => undefined, cancel: () => undefined, subscribe: () => undefined } });";
     const archivePath = await makeArchive(files);
 
     const result = await verifyDesktopPackage({ archivePath });
 
     expect(result.allPassed).toBe(false);
     expect(result.checks).toContainEqual({ name: "preload-run-bridge", passed: false });
+  });
+
+  it("rejects an ESM preload even when it exposes the required bridge", async () => {
+    const files = completeArchiveFiles();
+    files["dist/main/preload.cjs"] = [
+      "import { contextBridge, ipcRenderer } from 'electron';",
+      livePreloadBundle,
+    ].join("\n");
+    const archivePath = await makeArchive(files);
+
+    const result = await verifyDesktopPackage({ archivePath });
+
+    expect(result.allPassed).toBe(false);
+    expect(result.checks).toContainEqual({ name: "preload-run-bridge", passed: false });
+  });
+
+  it("rejects an archive that retains the legacy ESM preload artifact", async () => {
+    const files = completeArchiveFiles();
+    files["dist/main/preload.js"] = "import { contextBridge } from 'electron';";
+    const archivePath = await makeArchive(files);
+
+    const result = await verifyDesktopPackage({ archivePath });
+
+    expect(result.allPassed).toBe(false);
+    expect(result.checks).toContainEqual({ name: "main-preload", passed: false });
   });
 
   it("returns only fixed identifiers and booleans when a packaged file contains sensitive-looking text", async () => {
