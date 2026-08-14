@@ -231,7 +231,7 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   const projectSelectionRequest = useRef(0);
   const [task, setTask] = useState("");
   const [snapshot, setSnapshot] = useState<LiveSnapshot>();
-  const [noticeKey, setNoticeKey] = useState<"live.notice.chooseWorkspaceAndModel" | "live.notice.modelReady" | "live.notice.enterApiKey" | "live.notice.credentialSaveFailed" | "live.notice.credentialClearFailed" | "live.notice.commandConfirmed" | "live.notice.completeSetup" | "live.notice.runUpdated">("live.notice.chooseWorkspaceAndModel");
+  const [noticeKey, setNoticeKey] = useState<"live.notice.chooseWorkspaceAndModel" | "live.notice.modelReady" | "live.notice.enterApiKey" | "live.notice.credentialSaveFailed" | "live.notice.credentialClearFailed" | "live.notice.modelSaveFailed" | "live.notice.commandConfirmed" | "live.notice.completeSetup" | "live.notice.runUpdated">("live.notice.chooseWorkspaceAndModel");
   const notice = t(locale, noticeKey);
   const phase = livePhase(snapshot?.run.status);
 
@@ -242,16 +242,17 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
     });
   }, [snapshot?.run.runId, surface.run]);
 
-  const chooseModel = useCallback(async (next: DesktopModel): Promise<void> => {
+  const chooseModel = useCallback(async (next: DesktopModel): Promise<number> => {
     const requestId = ++credentialStatusRequest.current;
     setModel(next); setBaseUrl(next.baseUrl); setModelName(next.model);
     setApiKey("");
     const status = await surface.credential?.status(next.configId);
-    if (requestId !== credentialStatusRequest.current) return;
+    if (requestId !== credentialStatusRequest.current) return requestId;
     setCredentialConfigured(status?.configured ?? false);
     setCredentialAvailable(status?.availability !== "unavailable");
     setCredentialEditorOpen(!status?.configured);
     setNoticeKey(status?.configured ? "live.notice.modelReady" : "live.notice.enterApiKey");
+    return requestId;
   }, [surface]);
   const chooseProject = useCallback(async (next: DesktopProject): Promise<void> => {
     const requestId = ++projectSelectionRequest.current;
@@ -281,11 +282,17 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   async function saveModel(): Promise<void> {
     if (!project || !baseUrl || !modelName) return;
     const requestId = projectSelectionRequest.current;
-    const saved = await surface.model?.save({ projectId: project.projectId, baseUrl, model: modelName });
-    if (!saved || requestId !== projectSelectionRequest.current) return;
-    await chooseModel(saved);
-    if (requestId !== projectSelectionRequest.current) return;
-    await chooseProject(project);
+    const modelRequestId = credentialStatusRequest.current;
+    try {
+      const saved = await surface.model?.save({ projectId: project.projectId, baseUrl, model: modelName });
+      if (!saved || requestId !== projectSelectionRequest.current || modelRequestId !== credentialStatusRequest.current) return;
+      const selectedRequestId = await chooseModel(saved);
+      if (requestId !== projectSelectionRequest.current || selectedRequestId !== credentialStatusRequest.current) return;
+      await chooseProject(project);
+    } catch {
+      if (requestId !== projectSelectionRequest.current || modelRequestId !== credentialStatusRequest.current) return;
+      setNoticeKey("live.notice.modelSaveFailed");
+    }
   }
   async function saveCredential(): Promise<void> {
     if (!model || !apiKey.trim() || !surface.credential?.save) return;

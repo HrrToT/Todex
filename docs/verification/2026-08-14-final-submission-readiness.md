@@ -24,14 +24,14 @@ The renderer accepts a password only as short-lived component state. It clears t
 | Area | RED evidence | GREEN evidence |
 | --- | --- | --- |
 | Credential save IPC | Before implementation, the desktop IPC suite had `14 passed / 3 failed` because `credential.save` was missing. | `pnpm.cmd --filter @todex/desktop test --run test/ipc.test.ts`: `18/18 passed`. |
-| Credential workbench lifecycle | Before implementation, `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx` failed with `Unable to find a label with the text of: API Key`. A later independent review added three deferred-response regressions; they failed before the corresponding generation guards were added. | Current `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx`: `19/19 passed`; this includes clear-failure, stale status, stale save/clear, stale project-list, and stale model-save regressions. |
+| Credential workbench lifecycle | Before implementation, `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx` failed with `Unable to find a label with the text of: API Key`. Later independent review regressions used deferred responses and failed before the corresponding generation guards were added. | Current `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx`: `22/22 passed`; this includes clear-failure, stale status, stale save/clear, stale project-list, stale cross-project model-save, stale same-project model-save, and stale model-save rejection regressions. |
 | GitLab compatibility | Before implementation, `pnpm.cmd test --run scripts/test/gitlab-ci.test.ts` failed because `.gitlab-ci.yml` did not exist. | `pnpm.cmd test --run scripts/test/gitlab-ci.test.ts`: `1/1 passed`. |
 
 Focused final checks:
 
 ```powershell
 pnpm.cmd --filter @todex/desktop test --run test/ipc.test.ts test/workbench.spec.tsx
-# 2 files, 37 tests passed
+# 2 files, 40 tests passed
 
 pnpm.cmd test --run scripts/test/gitlab-ci.test.ts
 # 1 file, 1 test passed
@@ -94,9 +94,22 @@ delayed model save could reselect an old project. Three controlled
 deferred-Promise tests first reproduced those outcomes. The renderer now
 captures the credential or project selection generation at operation start and
 ignores a completion that is no longer current. The workbench suite is
-`19/19` after this repair. The review's remaining P2 is a direct regression
-test for an old `command.list()` response; the code already guards that
-continuation after the awaited command list.
+`19/19` after this repair.
+
+The final whole-branch review then found one P2 continuation path within the
+same project: a pending `model.save()` could reselect the older model after the
+user chose another model. A controlled deferred-Promise test first reproduced
+the rollback. `saveModel()` now snapshots the model-selection generation before
+the save, validates it after the save, and validates the generation returned by
+`chooseModel()` before refreshing the project. A second deferred-Promise test
+showed that a stale `model.save()` rejection was unhandled; `saveModel()` now
+absorbs it and only shows a fixed localized notice when the request is still
+current. The regression asserts both that a stale rejection does not display
+that notice and that a current rejection displays only the fixed notice, never
+the injected error detail. The workbench suite is `22/22` after these repairs.
+The only remaining coverage gap is a direct regression test for an old
+`command.list()` response; the code already guards that continuation after the
+awaited command list.
 
 The following actions remain required before the student can make a fully supported course-submission claim:
 

@@ -319,6 +319,115 @@ describe("Codex-style workbench", () => {
     }
   });
 
+  it("ignores a stale model save after selecting a different model", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (value: { configId: string; baseUrl: string; model: string }) => void;
+    const saving = new Promise<{ configId: string; baseUrl: string; model: string }>((resolve) => { resolveSave = resolve; });
+    const save = vi.fn(() => saving);
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [{ projectId: "p1", displayName: "fixture", profile: { kinds: [], candidates: [], notices: [] } }] },
+        command: { list: async () => [] },
+        model: {
+          list: async () => [
+            { configId: "m1", baseUrl: "https://example.invalid/v1", model: "first-model" },
+            { configId: "m2", baseUrl: "https://example.invalid/v1", model: "second-model" },
+          ],
+          save,
+        },
+        credential: { status: async () => ({ configured: false, availability: "available" as const }) },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await screen.findByRole("button", { name: "first-model" });
+      await user.click(screen.getByRole("button", { name: "Save model configuration" }));
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      await user.click(screen.getByRole("button", { name: "second-model" }));
+      expect(screen.getByLabelText("Model")).toHaveValue("second-model");
+
+      await act(async () => {
+        resolveSave({ configId: "saved-first", baseUrl: "https://example.invalid/v1", model: "saved-first" });
+        await saving;
+      });
+
+      await waitFor(() => expect(screen.getByLabelText("Model")).toHaveValue("second-model"));
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
+  it("absorbs a stale model save rejection after selecting a different model", async () => {
+    const user = userEvent.setup();
+    let rejectSave!: (reason: Error) => void;
+    const saving = new Promise<{ configId: string; baseUrl: string; model: string }>((_resolve, reject) => { rejectSave = reject; });
+    const save = vi.fn(() => saving);
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [{ projectId: "p1", displayName: "fixture", profile: { kinds: [], candidates: [], notices: [] } }] },
+        command: { list: async () => [] },
+        model: {
+          list: async () => [
+            { configId: "m1", baseUrl: "https://example.invalid/v1", model: "first-model" },
+            { configId: "m2", baseUrl: "https://example.invalid/v1", model: "second-model" },
+          ],
+          save,
+        },
+        credential: { status: async () => ({ configured: false, availability: "available" as const }) },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await screen.findByRole("button", { name: "first-model" });
+      await user.click(screen.getByRole("button", { name: "Save model configuration" }));
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      await user.click(screen.getByRole("button", { name: "second-model" }));
+
+      await act(async () => {
+        rejectSave(new Error("provider unavailable"));
+        await Promise.resolve();
+      });
+
+      await waitFor(() => expect(screen.getByLabelText("Model")).toHaveValue("second-model"));
+      expect(screen.queryByText("Model configuration save failed; try again")).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
+  it("shows a fixed model-save failure notice without error details", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [{ projectId: "p1", displayName: "fixture", profile: { kinds: [], candidates: [], notices: [] } }] },
+        command: { list: async () => [] },
+        model: {
+          list: async () => [{ configId: "m1", baseUrl: "https://example.invalid/v1", model: "first-model" }],
+          save: async () => { throw new Error("secret-value provider unavailable"); },
+        },
+        credential: { status: async () => ({ configured: false, availability: "available" as const }) },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await screen.findByRole("button", { name: "first-model" });
+      await user.click(screen.getByRole("button", { name: "Save model configuration" }));
+      expect(await screen.findByText("Model configuration save failed; try again")).toBeVisible();
+      expect(screen.queryByText("secret-value provider unavailable")).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
   it("switches the live workbench copy without changing the governed bridge", async () => {
     const user = userEvent.setup();
     const setLocale = vi.fn().mockResolvedValue({ locale: "en-US" });
