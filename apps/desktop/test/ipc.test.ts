@@ -170,9 +170,29 @@ describe("desktop IPC", () => {
     const host = { saveCredential: vi.fn() };
     registerTodexIpc(ipcMain, host as never);
 
-    await expect(ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "" })).rejects.toThrow("invalid_ipc_input");
-    await expect(ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "secret-value", credentialRef: "injected" })).rejects.toThrow("invalid_ipc_input");
+    const handler = ipcMain.handlers.get("credential.save");
+    await expect(handler?.({}, { configId: "", apiKey: "secret-value" })).rejects.toThrow("invalid_ipc_input");
+    await expect(handler?.({}, { configId: "config-1" })).rejects.toThrow("invalid_ipc_input");
+    await expect(handler?.({}, { configId: 1, apiKey: "secret-value" })).rejects.toThrow("invalid_ipc_input");
+    await expect(handler?.({}, { configId: "config-1", apiKey: "" })).rejects.toThrow("invalid_ipc_input");
+    await expect(handler?.({}, { configId: "config-1", apiKey: "secret-value", credentialRef: "injected" })).rejects.toThrow("invalid_ipc_input");
     expect(host.saveCredential).not.toHaveBeenCalled();
+  });
+
+  it("normalizes credential-save host errors without exposing a key or reference", async () => {
+    const ipcMain = new FakeIpcMain();
+    const host = { saveCredential: vi.fn().mockRejectedValue(new Error("secret-value credentialRef=private-ref")) };
+    registerTodexIpc(ipcMain, host as never);
+
+    const handler = ipcMain.handlers.get("credential.save");
+    if (!handler) throw new Error("missing_credential_save_handler");
+    const error = await (handler({}, { configId: "config-1", apiKey: "secret-value" }) as Promise<unknown>)
+      .then(() => undefined, (failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("host_operation_failed");
+    expect((error as Error).message).not.toContain("secret-value");
+    expect((error as Error).message).not.toContain("private-ref");
   });
 
   it("persists only the supported locale through intention-level settings IPC", async () => {
