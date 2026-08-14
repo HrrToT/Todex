@@ -150,6 +150,49 @@ describe("Codex-style workbench", () => {
     }
   });
 
+  it("ignores a stale project model list after switching projects", async () => {
+    const user = userEvent.setup();
+    const oldModel = { configId: "old-model", baseUrl: "https://example.invalid/v1", model: "old-configured-model" };
+    const currentModel = { configId: "current-model", baseUrl: "https://example.invalid/v1", model: "current-unconfigured-model" };
+    let resolveOldModels!: (value: typeof oldModel[]) => void;
+    const oldModels = new Promise<typeof oldModel[]>((resolve) => { resolveOldModels = resolve; });
+    const listModels = vi.fn(async (projectId: string) => projectId === "project-a" ? oldModels : [currentModel]);
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: {
+          importSelectedWorkspace: async () => undefined,
+          list: async () => [
+            { projectId: "project-a", displayName: "project-a", profile: { kinds: [], candidates: [], notices: [] } },
+            { projectId: "project-b", displayName: "project-b", profile: { kinds: [], candidates: [], notices: [] } },
+          ],
+        },
+        command: { list: async () => [] },
+        model: { list: listModels, save: async () => currentModel },
+        credential: {
+          status: async (configId: string) => ({ configured: configId === "old-model", availability: "available" as const }),
+        },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await waitFor(() => expect(listModels).toHaveBeenCalledWith("project-a"));
+      await user.click(screen.getByRole("button", { name: "project-b" }));
+      expect(await screen.findByLabelText("API Key")).toBeVisible();
+      expect(screen.getByRole("button", { name: "current-unconfigured-model" })).toBeVisible();
+
+      resolveOldModels([oldModel]);
+
+      await waitFor(() => expect(screen.getByLabelText("API Key")).toBeVisible());
+      expect(screen.queryByText("Credential configured")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "old-configured-model" })).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
   it("switches the live workbench copy without changing the governed bridge", async () => {
     const user = userEvent.setup();
     const setLocale = vi.fn().mockResolvedValue({ locale: "en-US" });

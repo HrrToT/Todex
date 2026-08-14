@@ -228,6 +228,7 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   const [credentialAvailable, setCredentialAvailable] = useState(true);
   const [credentialEditorOpen, setCredentialEditorOpen] = useState(false);
   const credentialStatusRequest = useRef(0);
+  const projectSelectionRequest = useRef(0);
   const [task, setTask] = useState("");
   const [snapshot, setSnapshot] = useState<LiveSnapshot>();
   const [noticeKey, setNoticeKey] = useState<"live.notice.chooseWorkspaceAndModel" | "live.notice.modelReady" | "live.notice.enterApiKey" | "live.notice.credentialSaveFailed" | "live.notice.credentialClearFailed" | "live.notice.commandConfirmed" | "live.notice.completeSetup" | "live.notice.runUpdated">("live.notice.chooseWorkspaceAndModel");
@@ -253,10 +254,15 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
     setNoticeKey(status?.configured ? "live.notice.modelReady" : "live.notice.enterApiKey");
   }, [surface]);
   const chooseProject = useCallback(async (next: DesktopProject): Promise<void> => {
+    const requestId = ++projectSelectionRequest.current;
     credentialStatusRequest.current += 1;
     const profile = next.profile ?? { kinds: [], candidates: [], notices: [] };
-    setProject({ ...next, profile }); setCandidates(profile.candidates); setCommands(await surface.command?.list(next.projectId) ?? []); setModel(undefined); setApiKey(""); setCredentialConfigured(false); setCredentialEditorOpen(false); setSnapshot(undefined);
+    setProject({ ...next, profile }); setCandidates(profile.candidates); setCommands([]); setModels([]); setModel(undefined); setApiKey(""); setCredentialConfigured(false); setCredentialEditorOpen(false); setSnapshot(undefined);
+    const nextCommands = await surface.command?.list(next.projectId) ?? [];
+    if (requestId !== projectSelectionRequest.current) return;
+    setCommands(nextCommands);
     const found = await surface.model?.list(next.projectId) ?? [];
+    if (requestId !== projectSelectionRequest.current) return;
     setModels(found); if (found[0]) await chooseModel(found[0]);
   }, [chooseModel, surface]);
   const refreshProjects = useCallback(async (): Promise<void> => {
