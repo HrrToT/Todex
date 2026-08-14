@@ -14,6 +14,7 @@
 | `fa63fc6` | Added first-run, update, and clear Credential Manager controls in the desktop workbench. |
 | `91ec3d9` | Handles credential-clear failures with a redacted localized notice while retaining the configured state. |
 | `4636dce` | Prevents delayed credential-status responses from overwriting a newer model selection. |
+| `9268000` | Prevents a stale project's delayed model list from reactivating an old model. |
 | `8127b5f` | Added GitLab-compatible `unit-test` CI job and reconciled release/course documents. |
 
 The renderer accepts a password only as short-lived component state. It clears that state before awaiting the save IPC, never displays or pre-fills the value, and has no credential-read capability. The main process remains the sole runtime credential reader. The API key is not included in Git, SQLite, trace, logs, exports, model configuration persistence, or renderer query projections.
