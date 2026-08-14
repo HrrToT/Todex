@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ipcMain } from "electron";
+import { app, ipcMain } from "electron";
 
 async function smoke(): Promise<void> {
   process.env.TODEX_START_MAIN = "0";
@@ -20,6 +20,7 @@ async function smoke(): Promise<void> {
     host.close();
   } finally {
     rmSync(userDataPath, { force: true, recursive: true });
+    app.quit();
   }
 }
 

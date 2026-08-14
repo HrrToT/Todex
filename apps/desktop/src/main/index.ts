@@ -6,7 +6,7 @@ import { WorkspaceSelector } from "./workspace-selector.js";
 import { WorkspaceHost } from "./workspace-host.js";
 import { DesktopRunService } from "./desktop-run-service.js";
 
-export const DESKTOP_HOST_VERSION = "0.1.1";
+export const DESKTOP_HOST_VERSION = "0.1.2";
 
 export interface BrowserWindowLike {
   loadURL(url: string): Promise<void> | void;
