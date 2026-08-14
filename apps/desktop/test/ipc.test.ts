@@ -51,6 +51,7 @@ const EXPECTED_CHANNELS = [
   "memory.list",
   "memory.delete",
   "credential.status",
+  "credential.save",
   "credential.clear",
   "settings.getLocale",
   "settings.setLocale",
@@ -69,7 +70,6 @@ describe("desktop IPC", () => {
     expect(ipcMain.handlers.has("filesystem.read")).toBe(false);
     expect(ipcMain.handlers.has("project.selectWorkspace")).toBe(false);
     expect(ipcMain.handlers.has("project.save")).toBe(false);
-    expect(ipcMain.handlers.has("credential.save")).toBe(false);
     expect(ipcMain.handlers.has("memory.save")).toBe(false);
   });
 
@@ -138,10 +138,11 @@ describe("desktop IPC", () => {
     );
   });
 
-  it("exposes only credential status and clearing lifecycle operations", async () => {
+  it("saves credentials through a narrow redacted lifecycle operation", async () => {
     const ipcMain = new FakeIpcMain();
     const host = {
       credentialStatus: vi.fn().mockResolvedValue({ configured: true, availability: "available" }),
+      saveCredential: vi.fn().mockResolvedValue({ configured: true, credentialRef: "credential-private-ref" }),
       clearCredential: vi.fn().mockResolvedValue({ configured: false }),
     };
     registerTodexIpc(ipcMain, host as never);
@@ -149,12 +150,29 @@ describe("desktop IPC", () => {
     await expect(ipcMain.handlers.get("credential.status")?.({}, { configId: "config-1" })).resolves.toEqual(
       { configured: true, availability: "available" },
     );
+    const saved = await ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "secret-value" });
+    expect(saved).toEqual({
+      configured: true,
+    });
     await expect(ipcMain.handlers.get("credential.clear")?.({}, { configId: "config-1" })).resolves.toEqual({
       configured: false,
     });
 
     expect(host.credentialStatus).toHaveBeenCalledWith("config-1");
+    expect(host.saveCredential).toHaveBeenCalledWith("config-1", "secret-value");
     expect(host.clearCredential).toHaveBeenCalledWith("config-1");
+    expect(JSON.stringify(saved)).not.toContain("secret-value");
+    expect(JSON.stringify(saved)).not.toContain("credential-private-ref");
+  });
+
+  it("rejects empty and overbroad credential save input", async () => {
+    const ipcMain = new FakeIpcMain();
+    const host = { saveCredential: vi.fn() };
+    registerTodexIpc(ipcMain, host as never);
+
+    await expect(ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "" })).rejects.toThrow("invalid_ipc_input");
+    await expect(ipcMain.handlers.get("credential.save")?.({}, { configId: "config-1", apiKey: "secret-value", credentialRef: "injected" })).rejects.toThrow("invalid_ipc_input");
+    expect(host.saveCredential).not.toHaveBeenCalled();
   });
 
   it("persists only the supported locale through intention-level settings IPC", async () => {
