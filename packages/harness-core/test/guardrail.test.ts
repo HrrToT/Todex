@@ -151,7 +151,7 @@ function runConfiguredCommand(commandId = "test"): Action {
 describe("Guardrail path classification", () => {
   it("normalizes a Windows extended-length canonical path", () => {
     expect(normalizePath("\\\\?\\D:\\workspace\\src\\answer.ts")).toBe(
-      "D:/workspace/src/answer.ts",
+      "d:/workspace/src/answer.ts",
     );
   });
 
@@ -161,6 +161,16 @@ describe("Guardrail path classification", () => {
     };
 
     expect(checkPath("D:\\workspace", "src\\answer.ts", resolver)).toEqual({
+      decision: "allow",
+    });
+  });
+
+  it("compares Windows canonical paths without case sensitivity", () => {
+    const resolver: PathResolver = {
+      resolveCanonical: () => "\\\\?\\D:\\WORKSPACE\\SRC\\answer.ts",
+    };
+
+    expect(checkPath("d:\\workspace", "src\\answer.ts", resolver)).toEqual({
       decision: "allow",
     });
   });
