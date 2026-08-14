@@ -26,7 +26,7 @@ export class NodeWorkspaceFs implements WorkspaceFs, PathResolver {
   }
 
   resolveCanonical(workspaceRoot: string, path: string): string {
-    if (resolve(workspaceRoot) !== this.root) {
+    if (realpathSync.native(resolve(workspaceRoot)) !== this.root) {
       throw new Error("workspace_root_mismatch");
     }
     return this.resolveChecked(path, true);
