@@ -39,6 +39,11 @@ export function computeActionFingerprint(action: Action, projectId: string): str
 
 export function normalizePath(p: string): string {
   p = p.replace(/\\/g, "/");
+  if (p.startsWith("//?/UNC/")) {
+    p = `//${p.slice("//?/UNC/".length)}`;
+  } else if (p.startsWith("//?/")) {
+    p = p.slice("//?/".length);
+  }
   const isAbsolute = p.startsWith("/") || /^[A-Za-z]:/.test(p);
   const parts = p.split("/");
   const result: string[] = [];
