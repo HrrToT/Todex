@@ -165,6 +165,16 @@ describe("Guardrail path classification", () => {
     });
   });
 
+  it("compares Windows canonical paths without case sensitivity", () => {
+    const resolver: PathResolver = {
+      resolveCanonical: () => "\\\\?\\D:\\WORKSPACE\\SRC\\answer.ts",
+    };
+
+    expect(checkPath("d:\\workspace", "src\\answer.ts", resolver)).toEqual({
+      decision: "allow",
+    });
+  });
+
   it("rejects an extended Windows canonical path outside the workspace", () => {
     const resolver: PathResolver = {
       resolveCanonical: () => "\\\\?\\D:\\outside\\answer.ts",

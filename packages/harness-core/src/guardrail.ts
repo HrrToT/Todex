@@ -60,7 +60,10 @@ export function normalizePath(p: string): string {
     }
   }
   const body = result.join("/");
-  if (isAbsolute && !/^[A-Za-z]:/.test(body)) {
+  if (/^[A-Za-z]:/.test(body)) {
+    return body.toLowerCase();
+  }
+  if (isAbsolute) {
     return "/" + body;
   }
   return body;
