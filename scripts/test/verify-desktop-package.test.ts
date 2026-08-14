@@ -25,6 +25,7 @@ async function makeArchive(files: Readonly<Record<string, string>>): Promise<str
 const rendererDocument = '<!doctype html><script type="module" src="/assets/index-live.js"></script>';
 const liveRendererBundle = '<main data-todex-surface="live-workbench"></main>';
 const livePreloadBundle = [
+  "const invoke = (channel, input) => ipcRenderer.invoke(channel, input);",
   "contextBridge.exposeInMainWorld('todex', {",
   "  run: {",
   "    start: (input) => invoke('run.start', input),",
@@ -87,6 +88,76 @@ describe("verifyDesktopPackage", () => {
     const files = completeArchiveFiles();
     files["dist/renderer/index.html"] = '<!doctype html><script type="module" src="../main/desktop-run-service.js"></script>';
     files["dist/main/desktop-run-service.js"] = '<main data-todex-surface="live-workbench"></main>';
+    const archivePath = await makeArchive(files);
+
+    const result = await verifyDesktopPackage({ archivePath });
+
+    expect(result.allPassed).toBe(false);
+    expect(result.checks).toContainEqual({ name: "renderer-live-workbench", passed: false });
+  });
+
+  it("rejects a lookalike preload whose run bridge is exposed under another global", async () => {
+    const files = completeArchiveFiles();
+    files["dist/main/preload.js"] = [
+      "contextBridge.exposeInMainWorld('other', {",
+      "  run: {",
+      "    start: () => invoke('run.start', {}),",
+      "    cancel: () => invoke('run.cancel', {}),",
+      "    subscribe: () => invoke('run.subscribe', {}),",
+      "  },",
+      "});",
+    ].join("\n");
+    const archivePath = await makeArchive(files);
+
+    const result = await verifyDesktopPackage({ archivePath });
+
+    expect(result.allPassed).toBe(false);
+    expect(result.checks).toContainEqual({ name: "preload-run-bridge", passed: false });
+  });
+
+  it("rejects a todex run object when matching IPC strings are not invoked by its methods", async () => {
+    const files = completeArchiveFiles();
+    files["dist/main/preload.js"] = [
+      "const note = \"invoke('run.start') invoke('run.cancel') invoke('run.subscribe')\";",
+      "contextBridge.exposeInMainWorld('todex', {",
+      "  run: {",
+      "    start: () => undefined,",
+      "    cancel: () => undefined,",
+      "    subscribe: () => undefined,",
+      "  },",
+      "});",
+    ].join("\n");
+    const archivePath = await makeArchive(files);
+
+    const result = await verifyDesktopPackage({ archivePath });
+
+    expect(result.allPassed).toBe(false);
+    expect(result.checks).toContainEqual({ name: "preload-run-bridge", passed: false });
+  });
+
+  it("rejects a bridge when invoke is not the helper bound to ipcRenderer.invoke", async () => {
+    const files = completeArchiveFiles();
+    files["dist/main/preload.js"] = [
+      "const other = () => ipcRenderer.invoke('run.start', {});",
+      "contextBridge.exposeInMainWorld('todex', {",
+      "  run: {",
+      "    start: () => invoke('run.start', {}),",
+      "    cancel: () => invoke('run.cancel', {}),",
+      "    subscribe: () => invoke('run.subscribe', {}),",
+      "  },",
+      "});",
+    ].join("\n");
+    const archivePath = await makeArchive(files);
+
+    const result = await verifyDesktopPackage({ archivePath });
+
+    expect(result.allPassed).toBe(false);
+    expect(result.checks).toContainEqual({ name: "preload-run-bridge", passed: false });
+  });
+
+  it("rejects a renderer bundle with separated live workbench marker words", async () => {
+    const files = completeArchiveFiles();
+    files["dist/renderer/assets/index-live.js"] = 'const label = "data-todex-surface"; const note = "live-workbench";';
     const archivePath = await makeArchive(files);
 
     const result = await verifyDesktopPackage({ archivePath });

@@ -1,6 +1,7 @@
 import { extractFile, listPackage } from "@electron/asar";
 import { posix } from "node:path";
 import { pathToFileURL } from "node:url";
+import * as ts from "typescript";
 
 export type DesktopPackageCheckName =
   | "main-preload"
@@ -64,13 +65,120 @@ function readArchiveText(archivePath: string, entryPath: string | undefined): st
   }
 }
 
+function propertyName(property: ts.ObjectLiteralElementLike): string | undefined {
+  if (!ts.isPropertyAssignment(property)) return undefined;
+  if (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) return property.name.text;
+  return undefined;
+}
+
+function objectProperty(object: ts.ObjectLiteralExpression, name: string): ts.PropertyAssignment | undefined {
+  const property = object.properties.find((candidate) => propertyName(candidate) === name);
+  return property && ts.isPropertyAssignment(property) ? property : undefined;
+}
+
+function hasCall(node: ts.Node, predicate: (call: ts.CallExpression) => boolean): boolean {
+  let found = false;
+  const visit = (candidate: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(candidate) && predicate(candidate)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(candidate, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function callsInvoke(node: ts.Node, channel: string): boolean {
+  return hasCall(node, (call) => ts.isIdentifier(call.expression)
+    && call.expression.text === "invoke"
+    && call.arguments.length > 0
+    && ts.isStringLiteral(call.arguments[0])
+    && call.arguments[0].text === channel);
+}
+
+function bindingNameIsInvoke(name: ts.BindingName | undefined): boolean {
+  return name !== undefined && ts.isIdentifier(name) && name.text === "invoke";
+}
+
+function hasLocalInvokeBinding(node: ts.Node): boolean {
+  let found = false;
+  const visit = (candidate: ts.Node): void => {
+    if (found) return;
+    if ((ts.isVariableDeclaration(candidate) || ts.isParameter(candidate)) && bindingNameIsInvoke(candidate.name)) {
+      found = true;
+      return;
+    }
+    if ((ts.isFunctionDeclaration(candidate) || ts.isFunctionExpression(candidate) || ts.isClassDeclaration(candidate))
+      && bindingNameIsInvoke(candidate.name)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(candidate, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function isIpcRendererInvokeCall(call: ts.CallExpression): boolean {
+  return ts.isPropertyAccessExpression(call.expression)
+    && ts.isIdentifier(call.expression.expression)
+    && call.expression.expression.text === "ipcRenderer"
+    && call.expression.name.text === "invoke";
+}
+
+function isTopLevelInvokeHelper(statement: ts.Statement): boolean {
+  if (ts.isVariableStatement(statement)) {
+    return statement.declarationList.declarations.some((declaration) => bindingNameIsInvoke(declaration.name)
+      && declaration.initializer !== undefined
+      && hasCall(declaration.initializer, isIpcRendererInvokeCall));
+  }
+  return ts.isFunctionDeclaration(statement)
+    && bindingNameIsInvoke(statement.name)
+    && hasCall(statement, isIpcRendererInvokeCall);
+}
+
+function definesIpcInvokeHelper(sourceFile: ts.SourceFile): boolean {
+  return sourceFile.statements.some(isTopLevelInvokeHelper);
+}
+
 function hasPreloadRunBridge(preload: string | undefined): boolean {
   if (!preload) return false;
-  return /\bcontextBridge\.exposeInMainWorld\s*\(/.test(preload)
-    && /\brun\s*:\s*\{/.test(preload)
-    && /\binvoke\s*\(\s*["']run\.start["']/.test(preload)
-    && /\binvoke\s*\(\s*["']run\.cancel["']/.test(preload)
-    && /\binvoke\s*\(\s*["']run\.subscribe["']/.test(preload);
+
+  const sourceFile = ts.createSourceFile("preload.js", preload, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  let bridge: ts.ObjectLiteralExpression | undefined;
+  const visit = (node: ts.Node): void => {
+    if (bridge || !ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) {
+      if (!bridge) ts.forEachChild(node, visit);
+      return;
+    }
+
+    const target = node.expression;
+    if (ts.isIdentifier(target.expression)
+      && target.expression.text === "contextBridge"
+      && target.name.text === "exposeInMainWorld"
+      && node.arguments.length >= 2
+      && ts.isStringLiteral(node.arguments[0])
+      && node.arguments[0].text === "todex"
+      && ts.isObjectLiteralExpression(node.arguments[1])) {
+      bridge = node.arguments[1];
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+
+  const run = bridge && objectProperty(bridge, "run");
+  const runObject = run && ts.isObjectLiteralExpression(run.initializer) ? run.initializer : undefined;
+  if (!runObject || !definesIpcInvokeHelper(sourceFile)) return false;
+
+  return (["start", "cancel", "subscribe"] as const).every((method) => {
+    const property = objectProperty(runObject, method);
+    return property !== undefined
+      && !hasLocalInvokeBinding(property.initializer)
+      && callsInvoke(property.initializer, `run.${method}`);
+  });
 }
 
 export async function verifyDesktopPackage(options: VerifyDesktopPackageOptions): Promise<DesktopPackageVerification> {
@@ -94,7 +202,11 @@ export async function verifyDesktopPackage(options: VerifyDesktopPackageOptions)
     Object.freeze({ name: "main-preload", passed: hasPreload }),
     Object.freeze({ name: "main-run-service", passed: hasRunService }),
     Object.freeze({ name: "renderer-document", passed: hasRendererDocument }),
-    Object.freeze({ name: "renderer-live-workbench", passed: rendererBundle?.includes("data-todex-surface") === true && rendererBundle.includes("live-workbench") }),
+    Object.freeze({
+      name: "renderer-live-workbench",
+      passed: rendererBundle?.includes('data-todex-surface":"live-workbench"') === true
+        || rendererBundle?.includes('data-todex-surface="live-workbench"') === true,
+    }),
     Object.freeze({ name: "preload-run-bridge", passed: hasPreloadRunBridge(preload) }),
   ]);
 
