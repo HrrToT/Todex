@@ -1,8 +1,8 @@
 # Final Submission Readiness Verification
 
-**Date:** 2026-08-14  
-**Branch:** `codex/final-submission-readiness`  
-**Base:** `origin/main` at `e10e597e41a7dd489895bcc374a863db80cef7e8`  
+**Date:** 2026-08-14
+**Branch:** `codex/final-submission-readiness`
+**Base:** `origin/main` at `e10e597e41a7dd489895bcc374a863db80cef7e8`
 **Scope:** close documented course-submission gaps without weakening Todex governance or credential boundaries.
 
 ## Implemented Changes
@@ -22,14 +22,14 @@ The renderer accepts a password only as short-lived component state. It clears t
 | Area | RED evidence | GREEN evidence |
 | --- | --- | --- |
 | Credential save IPC | Before implementation, the desktop IPC suite had `14 passed / 3 failed` because `credential.save` was missing. | `pnpm.cmd --filter @todex/desktop test --run test/ipc.test.ts`: `18/18 passed`. |
-| Credential workbench lifecycle | Before implementation, `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx` failed with `Unable to find a label with the text of: API Key`. | `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx`: `13/13 passed`. |
+| Credential workbench lifecycle | Before implementation, `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx` failed with `Unable to find a label with the text of: API Key`. | Current `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx`: `15/15 passed`; this includes later clear-failure and stale-status regressions. |
 | GitLab compatibility | Before implementation, `pnpm.cmd test --run scripts/test/gitlab-ci.test.ts` failed because `.gitlab-ci.yml` did not exist. | `pnpm.cmd test --run scripts/test/gitlab-ci.test.ts`: `1/1 passed`. |
 
 Focused final checks:
 
 ```powershell
 pnpm.cmd --filter @todex/desktop test --run test/ipc.test.ts test/workbench.spec.tsx
-# 2 files, 31 tests passed
+# 2 files, 33 tests passed
 
 pnpm.cmd test --run scripts/test/gitlab-ci.test.ts
 # 1 file, 1 test passed
@@ -74,6 +74,14 @@ The public Render deployment remains a fixed-scenario Mock Demo. It must not acc
 ## Review and Remaining Actions
 
 Task 1 received independent specification review and code/security review; neither found P0 or P1 issues. The focused P2 coverage additions are included in `13f7f35`. A fresh independent Task 2 review could not be dispatched because the subagent service returned a quota `403`; this must remain visible until an independent final whole-branch review occurs.
+
+A later independent whole-branch review found no P0 and one P1: a delayed
+credential-status response for an old model selection could overwrite the
+current model's credential state. The renderer now invalidates earlier status
+requests on each model or project selection, and the `15/15` workbench suite
+contains a controlled deferred-response regression. The review also identified
+two documentation P2 items, both corrected here: focused test counts match the
+current suite and this Markdown file uses no trailing-space line breaks.
 
 The following actions remain required before the student can make a fully supported course-submission claim:
 

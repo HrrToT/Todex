@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -105,6 +105,46 @@ describe("Codex-style workbench", () => {
       expect(screen.getByText("Credential configured")).toBeVisible();
       expect(document.body.textContent).not.toContain("secret-value");
       expect(document.body.textContent).not.toContain("private-ref");
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
+  it("ignores a stale credential status after switching models", async () => {
+    const user = userEvent.setup();
+    let resolveFirstStatus!: (value: { configured: boolean; availability: "available" }) => void;
+    const firstStatus = new Promise<{ configured: boolean; availability: "available" }>((resolve) => {
+      resolveFirstStatus = resolve;
+    });
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [{ projectId: "p1", displayName: "fixture", profile: { kinds: [], candidates: [], notices: [] } }] },
+        model: {
+          list: async () => [
+            { configId: "m1", baseUrl: "https://example.invalid/v1", model: "configured-model" },
+            { configId: "m2", baseUrl: "https://example.invalid/v1", model: "unconfigured-model" },
+          ],
+          save: async () => ({ configId: "m1", baseUrl: "https://example.invalid/v1", model: "configured-model" }),
+        },
+        credential: {
+          status: async (configId: string) => configId === "m1"
+            ? firstStatus
+            : { configured: false, availability: "available" as const },
+        },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await user.click(await screen.findByRole("button", { name: "unconfigured-model" }));
+      expect(await screen.findByLabelText("API Key")).toBeVisible();
+
+      resolveFirstStatus({ configured: true, availability: "available" });
+
+      await waitFor(() => expect(screen.getByLabelText("API Key")).toBeVisible());
+      expect(screen.queryByText("Credential configured")).not.toBeInTheDocument();
     } finally {
       Object.defineProperty(window, "todex", { configurable: true, value: undefined });
     }

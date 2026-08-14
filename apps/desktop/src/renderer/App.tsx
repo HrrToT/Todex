@@ -227,6 +227,7 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   const [credentialConfigured, setCredentialConfigured] = useState(false);
   const [credentialAvailable, setCredentialAvailable] = useState(true);
   const [credentialEditorOpen, setCredentialEditorOpen] = useState(false);
+  const credentialStatusRequest = useRef(0);
   const [task, setTask] = useState("");
   const [snapshot, setSnapshot] = useState<LiveSnapshot>();
   const [noticeKey, setNoticeKey] = useState<"live.notice.chooseWorkspaceAndModel" | "live.notice.modelReady" | "live.notice.enterApiKey" | "live.notice.credentialSaveFailed" | "live.notice.credentialClearFailed" | "live.notice.commandConfirmed" | "live.notice.completeSetup" | "live.notice.runUpdated">("live.notice.chooseWorkspaceAndModel");
@@ -241,15 +242,18 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   }, [snapshot?.run.runId, surface.run]);
 
   const chooseModel = useCallback(async (next: DesktopModel): Promise<void> => {
+    const requestId = ++credentialStatusRequest.current;
     setModel(next); setBaseUrl(next.baseUrl); setModelName(next.model);
     setApiKey("");
     const status = await surface.credential?.status(next.configId);
+    if (requestId !== credentialStatusRequest.current) return;
     setCredentialConfigured(status?.configured ?? false);
     setCredentialAvailable(status?.availability !== "unavailable");
     setCredentialEditorOpen(!status?.configured);
     setNoticeKey(status?.configured ? "live.notice.modelReady" : "live.notice.enterApiKey");
   }, [surface]);
   const chooseProject = useCallback(async (next: DesktopProject): Promise<void> => {
+    credentialStatusRequest.current += 1;
     const profile = next.profile ?? { kinds: [], candidates: [], notices: [] };
     setProject({ ...next, profile }); setCandidates(profile.candidates); setCommands(await surface.command?.list(next.projectId) ?? []); setModel(undefined); setApiKey(""); setCredentialConfigured(false); setCredentialEditorOpen(false); setSnapshot(undefined);
     const found = await surface.model?.list(next.projectId) ?? [];
