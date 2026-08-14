@@ -128,7 +128,7 @@ awaited command list.
 
 The following actions remain required before the student can make a fully supported course-submission claim:
 
-1. The student must personally complete the 1500--2500 Chinese-character substantive answers in `docs/REFLECTION.md`; the repository only supplies the question framework and evidence links.
+1. The student must complete a factual review of the 1500--2500 Chinese-character `docs/REFLECTION.md`, retain ownership of its conclusions, and disclose any AI assistance used to prepare it. The document must not invent personal experience or manual acceptance evidence.
 2. The project owner must perform and record a controlled installed-app acceptance with a non-sensitive Node or Python repository, a real OpenAI-compatible provider configuration, and no secrets in the evidence. It must separately verify governed read/patch, approval, trace visibility, and refusal behavior.
 3. PR #22 has received the recorded final whole-branch review, a green CI run,
    and a merge into `main`. The remaining course evidence is the student's own
