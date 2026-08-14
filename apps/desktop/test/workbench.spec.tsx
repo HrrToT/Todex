@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -150,6 +150,89 @@ describe("Codex-style workbench", () => {
     }
   });
 
+  it("ignores a stale credential save after switching models", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (value: { configured: true }) => void;
+    const saving = new Promise<{ configured: true }>((resolve) => { resolveSave = resolve; });
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [{ projectId: "p1", displayName: "fixture", profile: { kinds: [], candidates: [], notices: [] } }] },
+        model: {
+          list: async () => [
+            { configId: "m1", baseUrl: "https://example.invalid/v1", model: "first-model" },
+            { configId: "m2", baseUrl: "https://example.invalid/v1", model: "second-model" },
+          ],
+          save: async () => undefined,
+        },
+        credential: {
+          status: async () => ({ configured: false, availability: "available" as const }),
+          save: async () => saving,
+        },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await user.type(await screen.findByLabelText("API Key"), "secret-value");
+      await user.click(screen.getByRole("button", { name: "Save API Key" }));
+      await user.click(screen.getByRole("button", { name: "second-model" }));
+      expect(await screen.findByLabelText("API Key")).toBeVisible();
+
+      await act(async () => {
+        resolveSave({ configured: true });
+        await saving;
+      });
+
+      await waitFor(() => expect(screen.getByLabelText("API Key")).toBeVisible());
+      expect(screen.queryByText("Credential configured")).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
+  it("ignores a stale credential clear after switching models", async () => {
+    const user = userEvent.setup();
+    let resolveClear!: (value: { configured: false }) => void;
+    const clearing = new Promise<{ configured: false }>((resolve) => { resolveClear = resolve; });
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [{ projectId: "p1", displayName: "fixture", profile: { kinds: [], candidates: [], notices: [] } }] },
+        model: {
+          list: async () => [
+            { configId: "m1", baseUrl: "https://example.invalid/v1", model: "configured-model" },
+            { configId: "m2", baseUrl: "https://example.invalid/v1", model: "second-model" },
+          ],
+          save: async () => undefined,
+        },
+        credential: {
+          status: async () => ({ configured: true, availability: "available" as const }),
+          clear: async () => clearing,
+        },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await user.click(await screen.findByRole("button", { name: "Clear API Key" }));
+      await user.click(screen.getByRole("button", { name: "second-model" }));
+      expect(await screen.findByText("Credential configured")).toBeVisible();
+
+      await act(async () => {
+        resolveClear({ configured: false });
+        await clearing;
+      });
+
+      await waitFor(() => expect(screen.getByText("Credential configured")).toBeVisible());
+      expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
   it("ignores a stale project model list after switching projects", async () => {
     const user = userEvent.setup();
     const oldModel = { configId: "old-model", baseUrl: "https://example.invalid/v1", model: "old-configured-model" };
@@ -188,6 +271,49 @@ describe("Codex-style workbench", () => {
       await waitFor(() => expect(screen.getByLabelText("API Key")).toBeVisible());
       expect(screen.queryByText("Credential configured")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "old-configured-model" })).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
+  it("ignores a stale model save after switching projects", async () => {
+    const user = userEvent.setup();
+    const projectA = { projectId: "project-a", displayName: "project-a", profile: { kinds: [], candidates: [], notices: [] } };
+    const projectB = { projectId: "project-b", displayName: "project-b", profile: { kinds: [], candidates: [], notices: [] } };
+    let resolveSave!: (value: { configId: string; baseUrl: string; model: string }) => void;
+    const saving = new Promise<{ configId: string; baseUrl: string; model: string }>((resolve) => { resolveSave = resolve; });
+    const save = vi.fn(() => saving);
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [projectA, projectB] },
+        command: { list: async () => [] },
+        model: {
+          list: async (projectId: string) => projectId === "project-a"
+            ? [{ configId: "a-model", baseUrl: "https://a.example.invalid/v1", model: "a-model" }]
+            : [{ configId: "b-model", baseUrl: "https://b.example.invalid/v1", model: "b-model" }],
+          save,
+        },
+        credential: { status: async () => ({ configured: false, availability: "available" as const }) },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await screen.findByRole("button", { name: "a-model" });
+      await user.click(screen.getByRole("button", { name: "Save model configuration" }));
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      await user.click(screen.getByRole("button", { name: "project-b" }));
+      expect(await screen.findByRole("heading", { name: "project-b" })).toBeVisible();
+
+      await act(async () => {
+        resolveSave({ configId: "saved-a-model", baseUrl: "https://a.example.invalid/v1", model: "saved-a-model" });
+        await saving;
+      });
+
+      await waitFor(() => expect(screen.getByRole("heading", { name: "project-b" })).toBeVisible());
+      expect(screen.queryByRole("button", { name: "saved-a-model" })).not.toBeInTheDocument();
     } finally {
       Object.defineProperty(window, "todex", { configurable: true, value: undefined });
     }

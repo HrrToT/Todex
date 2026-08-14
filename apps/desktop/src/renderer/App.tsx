@@ -280,22 +280,28 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   }
   async function saveModel(): Promise<void> {
     if (!project || !baseUrl || !modelName) return;
+    const requestId = projectSelectionRequest.current;
     const saved = await surface.model?.save({ projectId: project.projectId, baseUrl, model: modelName });
-    if (!saved) return;
-    await chooseModel(saved); await chooseProject(project);
+    if (!saved || requestId !== projectSelectionRequest.current) return;
+    await chooseModel(saved);
+    if (requestId !== projectSelectionRequest.current) return;
+    await chooseProject(project);
   }
   async function saveCredential(): Promise<void> {
     if (!model || !apiKey.trim() || !surface.credential?.save) return;
+    const requestId = ++credentialStatusRequest.current;
     const value = apiKey;
     setApiKey("");
     try {
       const saved = await surface.credential.save(model.configId, value);
+      if (requestId !== credentialStatusRequest.current) return;
       if (saved.configured) {
         setCredentialConfigured(true);
         setCredentialEditorOpen(false);
         setNoticeKey("live.notice.modelReady");
       }
     } catch {
+      if (requestId !== credentialStatusRequest.current) return;
       setCredentialConfigured(false);
       setCredentialEditorOpen(true);
       setNoticeKey("live.notice.credentialSaveFailed");
@@ -303,13 +309,16 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   }
   async function clearCredential(): Promise<void> {
     if (!model || !surface.credential?.clear) return;
+    const requestId = ++credentialStatusRequest.current;
     try {
       await surface.credential.clear(model.configId);
+      if (requestId !== credentialStatusRequest.current) return;
       setApiKey("");
       setCredentialConfigured(false);
       setCredentialEditorOpen(true);
       setNoticeKey("live.notice.enterApiKey");
     } catch {
+      if (requestId !== credentialStatusRequest.current) return;
       setNoticeKey("live.notice.credentialClearFailed");
     }
   }

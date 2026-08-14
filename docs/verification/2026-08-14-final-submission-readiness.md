@@ -24,14 +24,14 @@ The renderer accepts a password only as short-lived component state. It clears t
 | Area | RED evidence | GREEN evidence |
 | --- | --- | --- |
 | Credential save IPC | Before implementation, the desktop IPC suite had `14 passed / 3 failed` because `credential.save` was missing. | `pnpm.cmd --filter @todex/desktop test --run test/ipc.test.ts`: `18/18 passed`. |
-| Credential workbench lifecycle | Before implementation, `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx` failed with `Unable to find a label with the text of: API Key`. | Current `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx`: `16/16 passed`; this includes clear-failure, stale-model-status, and stale-project-list regressions. |
+| Credential workbench lifecycle | Before implementation, `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx` failed with `Unable to find a label with the text of: API Key`. A later independent review added three deferred-response regressions; they failed before the corresponding generation guards were added. | Current `pnpm.cmd --filter @todex/desktop test --run test/workbench.spec.tsx`: `19/19 passed`; this includes clear-failure, stale status, stale save/clear, stale project-list, and stale model-save regressions. |
 | GitLab compatibility | Before implementation, `pnpm.cmd test --run scripts/test/gitlab-ci.test.ts` failed because `.gitlab-ci.yml` did not exist. | `pnpm.cmd test --run scripts/test/gitlab-ci.test.ts`: `1/1 passed`. |
 
 Focused final checks:
 
 ```powershell
 pnpm.cmd --filter @todex/desktop test --run test/ipc.test.ts test/workbench.spec.tsx
-# 2 files, 34 tests passed
+# 2 files, 37 tests passed
 
 pnpm.cmd test --run scripts/test/gitlab-ci.test.ts
 # 1 file, 1 test passed
@@ -87,6 +87,16 @@ operations. The `16/16` workbench suite contains controlled deferred-response
 regressions for both paths. The review also identified two documentation P2
 items, both corrected here: focused test counts match the current suite and
 this Markdown file uses no trailing-space line breaks.
+
+A subsequent whole-branch review found two further P1 continuation paths:
+an old credential save or clear could update a newly selected model, and a
+delayed model save could reselect an old project. Three controlled
+deferred-Promise tests first reproduced those outcomes. The renderer now
+captures the credential or project selection generation at operation start and
+ignores a completion that is no longer current. The workbench suite is
+`19/19` after this repair. The review's remaining P2 is a direct regression
+test for an old `command.list()` response; the code already guards that
+continuation after the awaited command list.
 
 The following actions remain required before the student can make a fully supported course-submission claim:
 
