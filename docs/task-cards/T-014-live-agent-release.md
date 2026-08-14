@@ -1,6 +1,6 @@
 # T-014: Live Desktop Agent Release and Acceptance
 
-Status: in_progress
+Status: automatic_evidence_recorded_manual_acceptance_and_integration_pending
 
 Authoritative plan: [`2026-08-14-t-014-live-agent-release.md`](../superpowers/plans/2026-08-14-t-014-live-agent-release.md)
 
@@ -48,3 +48,13 @@ No other package, contract, harness, public Demo, CI workflow, dependency range,
 ## Required Delivery Record
 
 On completion add: RED/GREEN commands, exact package checks, manual acceptance facts, remaining limitations, commit IDs, PR URL, CI run, merge commit, tag/release URL, and installer version. Do not mark this card complete from source, test, static archive, or process evidence alone.
+
+## Current Evidence Boundary
+
+The local `0.1.4` candidate has automated evidence only: build checks, the
+deterministic mechanism demo, preload smoke, and five release-package structure
+checks. The local full-suite result remains non-green because 18 desktop tests
+cannot load the current `better-sqlite3` binary under Node 24. No installed-app
+controlled run, real-provider run, candidate PR, candidate CI, merge, tag, or
+release is recorded. See
+[`2026-08-14-t-014-live-agent-release.md`](../verification/2026-08-14-t-014-live-agent-release.md).

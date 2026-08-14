@@ -22,6 +22,9 @@ harness。它将受治理的文件操作、命令验证、人工审批、运行 
   已发布。它包含已合并的 T-013 受治理真实 Agent 路径，并提供
   `Todex-0.1.2-win-x64.exe`、`latest.yml` 和 blockmap。该版本已完成 CI、目标
   Electron smoke、打包和解包应用启动检查；真实外部模型与用户仓库的人工验收仍未完成。
+- 未发布候选：本地 `v0.1.4` 是 T-014 的 Live Agent 收口候选。其构建、预加载
+  smoke 和安装包结构检查已通过；已安装应用验收、真实 OpenAI-compatible 供给方验收、
+  候选 PR CI、合并、tag 与 GitHub Release 均尚未完成，不能作为已发布版本使用。
 
 ## 能力边界
 
