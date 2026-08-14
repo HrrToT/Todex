@@ -67,6 +67,21 @@ PR [#21](https://github.com/HrrToT/Todex/pull/21) merged the v0.1.2 desktop cand
 
 The public Render deployment remains a fixed-scenario Mock Demo. It must not accept real API keys, local filesystem paths, arbitrary commands, arbitrary patches, uploads, or a real-model URL.
 
+## PR #22 Integration Evidence
+
+PR [#22](https://github.com/HrrToT/Todex/pull/22) merged the final readiness
+branch into `main` on 2026-08-14. GitHub records merge commit
+`dfcaf5dca5a754b30a1a3791a307d0ac3000401a`; the final branch head was
+`79ef63529f33feb7458f49227c65f38553c7e654`. GitHub Actions
+[run 31785166883](https://github.com/HrrToT/Todex/actions/runs/31785166883)
+completed successfully for the pull request. Its sole `ci` job completed in
+49 seconds.
+
+The run emitted a Node.js 20 action-runtime deprecation warning for
+`actions/checkout@v4`, `actions/setup-node@v4`, and `pnpm/action-setup@v4`.
+This warning did not fail the job. It is a maintenance follow-up, not evidence
+that CI failed.
+
 ## Known Local Verification Limits
 
 `pnpm.cmd test --run` was executed, but the complete local suite is not green in this worktree. It reports 18 failures: all 12 `sqlite-store.test.ts` tests and all 6 `workspace-host.test.ts` tests fail before their behavior can run because the native `better-sqlite3` dependency was built for Electron Node ABI 135, whereas the active Node 24 runtime requires ABI 137. This is a known environment compatibility limit, not a passing full-suite result and not a regression attributed to this change.
@@ -115,6 +130,11 @@ The following actions remain required before the student can make a fully suppor
 
 1. The student must personally complete the 1500--2500 Chinese-character substantive answers in `docs/REFLECTION.md`; the repository only supplies the question framework and evidence links.
 2. The project owner must perform and record a controlled installed-app acceptance with a non-sensitive Node or Python repository, a real OpenAI-compatible provider configuration, and no secrets in the evidence. It must separately verify governed read/patch, approval, trace visibility, and refusal behavior.
-3. This branch needs a final independent specification review and code/security review, followed by a green PR CI run and merge.
+3. PR #22 has received the recorded final whole-branch review, a green CI run,
+   and a merge into `main`. The remaining course evidence is the student's own
+   reflection and a controlled installed-app real-provider acceptance, not an
+   additional claim about this merged PR.
 
-Until those actions are complete, this branch is a verified implementation and documentation preparation, not proof of an externally verified live-agent acceptance.
+Until the two manual actions are complete, the merged project is a verified
+implementation and documentation preparation, not proof of an externally
+verified live-agent acceptance.
