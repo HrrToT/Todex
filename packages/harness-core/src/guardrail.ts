@@ -205,11 +205,12 @@ export function checkPath(
   path: string,
   resolver: PathResolver,
 ): { decision: "allow" | "deny"; denyReason?: string } {
+  const canonicalRoot = normalizePath(resolver.resolveCanonical(workspaceRoot, "."));
   const canonical = normalizePath(resolver.resolveCanonical(workspaceRoot, path));
-  if (!isWithinWorkspace(canonical, workspaceRoot)) {
+  if (!isWithinWorkspace(canonical, canonicalRoot)) {
     return { decision: "deny", denyReason: "workspace_escape" };
   }
-  const relative = getRelativePath(canonical, workspaceRoot);
+  const relative = getRelativePath(canonical, canonicalRoot);
   if (isSensitivePath(relative)) {
     return { decision: "deny", denyReason: "sensitive_path" };
   }
