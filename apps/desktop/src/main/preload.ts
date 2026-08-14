@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld("todex", {
   },
   credential: {
     status: (configId: string) => invoke("credential.status", { configId }),
+    save: (configId: string, apiKey: string) => invoke("credential.save", { configId, apiKey }),
     clear: (configId: string) => invoke("credential.clear", { configId }),
   },
   settings: {

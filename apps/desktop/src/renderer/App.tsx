@@ -223,9 +223,15 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   const [model, setModel] = useState<DesktopModel>();
   const [baseUrl, setBaseUrl] = useState("");
   const [modelName, setModelName] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [credentialConfigured, setCredentialConfigured] = useState(false);
+  const [credentialAvailable, setCredentialAvailable] = useState(true);
+  const [credentialEditorOpen, setCredentialEditorOpen] = useState(false);
+  const credentialStatusRequest = useRef(0);
+  const projectSelectionRequest = useRef(0);
   const [task, setTask] = useState("");
   const [snapshot, setSnapshot] = useState<LiveSnapshot>();
-  const [noticeKey, setNoticeKey] = useState<"live.notice.chooseWorkspaceAndModel" | "live.notice.modelReady" | "live.notice.enterApiKey" | "live.notice.commandConfirmed" | "live.notice.completeSetup" | "live.notice.runUpdated">("live.notice.chooseWorkspaceAndModel");
+  const [noticeKey, setNoticeKey] = useState<"live.notice.chooseWorkspaceAndModel" | "live.notice.modelReady" | "live.notice.enterApiKey" | "live.notice.credentialSaveFailed" | "live.notice.credentialClearFailed" | "live.notice.modelSaveFailed" | "live.notice.commandConfirmed" | "live.notice.completeSetup" | "live.notice.runUpdated">("live.notice.chooseWorkspaceAndModel");
   const notice = t(locale, noticeKey);
   const phase = livePhase(snapshot?.run.status);
 
@@ -236,15 +242,28 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
     });
   }, [snapshot?.run.runId, surface.run]);
 
-  const chooseModel = useCallback(async (next: DesktopModel): Promise<void> => {
+  const chooseModel = useCallback(async (next: DesktopModel): Promise<number> => {
+    const requestId = ++credentialStatusRequest.current;
     setModel(next); setBaseUrl(next.baseUrl); setModelName(next.model);
+    setApiKey("");
     const status = await surface.credential?.status(next.configId);
+    if (requestId !== credentialStatusRequest.current) return requestId;
+    setCredentialConfigured(status?.configured ?? false);
+    setCredentialAvailable(status?.availability !== "unavailable");
+    setCredentialEditorOpen(!status?.configured);
     setNoticeKey(status?.configured ? "live.notice.modelReady" : "live.notice.enterApiKey");
+    return requestId;
   }, [surface]);
   const chooseProject = useCallback(async (next: DesktopProject): Promise<void> => {
+    const requestId = ++projectSelectionRequest.current;
+    credentialStatusRequest.current += 1;
     const profile = next.profile ?? { kinds: [], candidates: [], notices: [] };
-    setProject({ ...next, profile }); setCandidates(profile.candidates); setCommands(await surface.command?.list(next.projectId) ?? []); setModel(undefined); setSnapshot(undefined);
+    setProject({ ...next, profile }); setCandidates(profile.candidates); setCommands([]); setModels([]); setModel(undefined); setApiKey(""); setCredentialConfigured(false); setCredentialEditorOpen(false); setSnapshot(undefined);
+    const nextCommands = await surface.command?.list(next.projectId) ?? [];
+    if (requestId !== projectSelectionRequest.current) return;
+    setCommands(nextCommands);
     const found = await surface.model?.list(next.projectId) ?? [];
+    if (requestId !== projectSelectionRequest.current) return;
     setModels(found); if (found[0]) await chooseModel(found[0]);
   }, [chooseModel, surface]);
   const refreshProjects = useCallback(async (): Promise<void> => {
@@ -262,9 +281,53 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   }
   async function saveModel(): Promise<void> {
     if (!project || !baseUrl || !modelName) return;
-    const saved = await surface.model?.save({ projectId: project.projectId, baseUrl, model: modelName });
-    if (!saved) return;
-    await chooseModel(saved); await chooseProject(project);
+    const requestId = projectSelectionRequest.current;
+    const modelRequestId = credentialStatusRequest.current;
+    try {
+      const saved = await surface.model?.save({ projectId: project.projectId, baseUrl, model: modelName });
+      if (!saved || requestId !== projectSelectionRequest.current || modelRequestId !== credentialStatusRequest.current) return;
+      const selectedRequestId = await chooseModel(saved);
+      if (requestId !== projectSelectionRequest.current || selectedRequestId !== credentialStatusRequest.current) return;
+      await chooseProject(project);
+    } catch {
+      if (requestId !== projectSelectionRequest.current || modelRequestId !== credentialStatusRequest.current) return;
+      setNoticeKey("live.notice.modelSaveFailed");
+    }
+  }
+  async function saveCredential(): Promise<void> {
+    if (!model || !apiKey.trim() || !surface.credential?.save) return;
+    const requestId = ++credentialStatusRequest.current;
+    const value = apiKey;
+    setApiKey("");
+    try {
+      const saved = await surface.credential.save(model.configId, value);
+      if (requestId !== credentialStatusRequest.current) return;
+      if (saved.configured) {
+        setCredentialConfigured(true);
+        setCredentialEditorOpen(false);
+        setNoticeKey("live.notice.modelReady");
+      }
+    } catch {
+      if (requestId !== credentialStatusRequest.current) return;
+      setCredentialConfigured(false);
+      setCredentialEditorOpen(true);
+      setNoticeKey("live.notice.credentialSaveFailed");
+    }
+  }
+  async function clearCredential(): Promise<void> {
+    if (!model || !surface.credential?.clear) return;
+    const requestId = ++credentialStatusRequest.current;
+    try {
+      await surface.credential.clear(model.configId);
+      if (requestId !== credentialStatusRequest.current) return;
+      setApiKey("");
+      setCredentialConfigured(false);
+      setCredentialEditorOpen(true);
+      setNoticeKey("live.notice.enterApiKey");
+    } catch {
+      if (requestId !== credentialStatusRequest.current) return;
+      setNoticeKey("live.notice.credentialClearFailed");
+    }
   }
   async function confirmCandidate(candidateId: string): Promise<void> {
     if (!project) return;
@@ -290,7 +353,7 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   return <main className="workbench-shell">
     <aside className="workspace-rail" aria-label={t(locale, "workbench.workspaceNavigation")}><div className="brand-mark"><Command size={18} /><span>Todex</span><button type="button" onClick={onToggleLocale}>{locale === "zh-CN" ? "English" : "Chinese"}</button></div>
       <button className="project-switcher" type="button" onClick={() => void importWorkspace()}><FolderKanban size={16} /><span>{project?.displayName ?? t(locale, "live.selectWorkspace")}</span><ChevronRight size={14} /></button>
-      <section className="rail-section"><p>{t(locale, "live.modelConfiguration")}</p><label>Base URL<input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.example.com/v1" /></label><label>{t(locale, "live.model")}<input value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="model-name" /></label><p>{t(locale, "live.apiKeyPlaceholder")}</p><button className="run-row selected" type="button" onClick={() => void saveModel()}>{t(locale, "live.saveModelConfiguration")}</button></section>
+      <section className="rail-section"><p>{t(locale, "live.modelConfiguration")}</p><label>Base URL<input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.example.com/v1" /></label><label>{t(locale, "live.model")}<input value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="model-name" /></label><button className="run-row selected" type="button" onClick={() => void saveModel()}>{t(locale, "live.saveModelConfiguration")}</button>{model ? (!credentialAvailable ? <p>{t(locale, "live.credentialUnavailable")}</p> : credentialConfigured && !credentialEditorOpen ? <div><p>{t(locale, "live.credentialConfigured")}</p><button type="button" onClick={() => { setApiKey(""); setCredentialEditorOpen(true); }}>{t(locale, "live.updateApiKey")}</button><button type="button" onClick={() => void clearCredential()}>{t(locale, "live.clearApiKey")}</button></div> : <div><label>{t(locale, "live.apiKey")}<input aria-label={t(locale, "live.apiKey")} type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></label><button type="button" onClick={() => void saveCredential()}>{t(locale, "live.saveApiKey")}</button></div>) : <p>{t(locale, "live.apiKeyPlaceholder")}</p>}</section>
       <nav className="rail-nav">{projects.map((item) => <button key={item.projectId} type="button" onClick={() => void chooseProject(item)}><FolderKanban size={16} /><span>{item.displayName}</span></button>)}{models.map((item) => <button key={item.configId} type="button" onClick={() => void chooseModel(item)}><Command size={16} /><span>{item.model}</span></button>)}</nav>
     </aside>
     <section className="execution-area"><header className="stream-header"><div><span className="eyebrow">{t(locale, "workbench.workspace")}</span><h1>{project?.displayName ?? t(locale, "live.noWorkspaceSelected")}</h1></div><div className={`phase phase-${phase.className}`}><span />{t(locale, phase.labelKey)}</div>{snapshot && (snapshot.run.status === "running" || snapshot.run.status === "awaiting_approval" || snapshot.run.status === "dispatching") ? <button className="icon-button" type="button" aria-label={t(locale, "live.stopRun")} title={t(locale, "live.stopRun")} onClick={() => void surface.run?.cancel(snapshot.run.runId)}><X size={17} aria-hidden="true" /></button> : null}</header>

@@ -46,6 +46,7 @@ export const TODexIpcChannels = [
   "memory.list",
   "memory.delete",
   "credential.status",
+  "credential.save",
   "credential.clear",
   "settings.getLocale",
   "settings.setLocale",
@@ -66,6 +67,7 @@ const runStartSchema = z.object({
 const runApprovalSchema = z.object({ runId: z.string().min(1).optional(), approvalId: z.string().min(1), decision: z.enum(["once", "run", "command_prefix", "deny"]) }).strict();
 const memoryIdSchema = z.object({ memoryId: z.string().min(1) }).strict();
 const credentialConfigSchema = z.object({ configId: z.string().min(1) }).strict();
+const credentialSaveSchema = z.object({ configId: z.string().min(1), apiKey: z.string().min(1) }).strict();
 const localeSchema = z.object({ locale: z.enum(["zh-CN", "en-US"]) }).strict();
 
 export function registerTodexIpc(
@@ -205,6 +207,10 @@ export function registerTodexIpc(
   register(ipcMain, "credential.status", credentialConfigSchema, (input) =>
     host.credentialStatus(input.configId),
   );
+  register(ipcMain, "credential.save", credentialSaveSchema, async (input) => {
+    await host.saveCredential(input.configId, input.apiKey);
+    return Object.freeze({ configured: true });
+  });
   register(ipcMain, "credential.clear", credentialConfigSchema, (input) =>
     host.clearCredential(input.configId),
   );

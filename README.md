@@ -18,6 +18,10 @@ harness。它将受治理的文件操作、命令验证、人工审批、运行 
   已发布。它修复了打包 Renderer 的加载路径；发布页提供
   `Todex-0.1.1-win-x64.exe`、`latest.yml` 和校验信息。`v0.1.1` 的安装器已在
   本机完成完整性校验并安装，安装目录不再包含 `v0.1.0` 的空白 `data:` 页面入口。
+- 当前桌面候选版：[`v0.1.2`](https://github.com/HrrToT/Todex/releases/tag/v0.1.2)
+  已发布。它包含已合并的 T-013 受治理真实 Agent 路径，并提供
+  `Todex-0.1.2-win-x64.exe`、`latest.yml` 和 blockmap。该版本已完成 CI、目标
+  Electron smoke、打包和解包应用启动检查；真实外部模型与用户仓库的人工验收仍未完成。
 
 ## 能力边界
 
@@ -104,9 +108,10 @@ docs/               规约、计划、任务卡、验证证据和过程记录
 T-013 已通过 [PR #19](https://github.com/HrrToT/Todex/pull/19) 合并到 `main`，其最终
 CI [run 31708987042](https://github.com/HrrToT/Todex/actions/runs/31708987042) 已通过。
 源码中的桌面端允许用户通过原生目录选择器导入本地 Node.js 或 Python 项目，并保存一个
-OpenAI Chat Completions 兼容的 `baseUrl` 与模型名称。API Key 不由 GUI 收集或传过 IPC；
-必须预先通过 Windows Credential Manager 配置，运行时仅由 Electron main process 读取，
-不会被写入 SQLite、trace、导出数据或 Renderer 运行投影。
+OpenAI Chat Completions 兼容的 `baseUrl` 与模型名称。桌面端可通过一次性、受控的密码输入框
+将 API Key 交给窄类型 `credential.save` IPC，由 Electron main process 写入 Windows Credential
+Manager；界面不会回显或预填 API Key，IPC 也不会返回 API Key 或 credential reference。运行时仅由
+Electron main process 读取，API Key 不会被写入 SQLite、trace、日志、导出数据或 Renderer 查询投影。
 
 真实运行仍有明确治理边界：工作区内的读取、搜索和普通 unified diff 补丁可自动执行；
 每次已确认命令都必须先经过人工审批，审批前不会启动子进程。目录逃逸、符号链接逃逸、
@@ -123,9 +128,9 @@ OpenAI Chat Completions 兼容的 `baseUrl` 与模型名称。API Key 不由 GUI
 - `v0.1.0` 的安装版存在已确认的 Renderer 白屏问题；请使用已发布的
   `v0.1.1`。正式安装后的可见工作台内容仍应由使用者完成一次人工确认；安装文件
   与静态包内容核验不等同于完整交互式 Agent 验收。
-- `v0.1.1` 早于 T-013 合并，因此不包含本节所述的真实 Agent 集成。当前 `main` 的
-  源码包含受治理的真实模型、文件操作和固定配置命令路径；每次确认命令与高风险补丁
-  仍须人工审批，不能视为自治执行器。
+- `v0.1.1` 早于 T-013 合并，因此不包含本节所述的真实 Agent 集成。`v0.1.2` 是包含
+  该集成的 Windows x64 候选发布；每次确认命令与高风险补丁仍须人工审批，不能视为
+  自治执行器。
 - 已有 T-009 环境中曾记录 Electron 生命周期/关闭阶段的 `0xC0000005`；它不应
   被解释为模型、凭据或工具执行成功/失败的证据。
 - 本项目不是自治执行器。任何真实模型、凭据、文件写入或命令执行都应在桌面端

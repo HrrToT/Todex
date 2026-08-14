@@ -34,6 +34,8 @@ export interface TodexPreloadSurface {
   };
   credential?: {
     status(configId: string): Promise<{ configured: boolean; availability: "available" | "unavailable" }>;
+    save(configId: string, apiKey: string): Promise<{ configured: true }>;
+    clear(configId: string): Promise<{ configured: false }>;
   };
   settings?: {
     getLocale(): Promise<{ locale: Locale }>;
