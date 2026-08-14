@@ -28,6 +28,7 @@ export const DEFAULT_DESKTOP_PACKAGE_ARCHIVE = "apps/desktop/release/win-unpacke
 const PRELOAD_PATH = "dist/main/preload.js";
 const RUN_SERVICE_PATH = "dist/main/desktop-run-service.js";
 const RENDERER_DOCUMENT_PATH = "dist/renderer/index.html";
+const RENDERER_ASSET_PATH = "dist/renderer/assets/";
 
 function normalizeArchivePath(value: string): string {
   return value.replaceAll("\\", "/").replace(/^\/+/, "");
@@ -40,8 +41,17 @@ function archiveReadPath(value: string): string {
 function rendererBundlePath(document: string, entries: ReadonlyMap<string, string>): string | undefined {
   const source = /<script[^>]+src=["']([^"']+\.js)["']/i.exec(document)?.[1];
   if (!source) return undefined;
-  const relativeSource = source.replace(/^\/+/, "");
-  const candidate = normalizeArchivePath(posix.join(posix.dirname(RENDERER_DOCUMENT_PATH), relativeSource));
+  const assetPrefix = source.startsWith("./assets/")
+    ? "./assets/"
+    : source.startsWith("/assets/")
+      ? "/assets/"
+      : undefined;
+  if (!assetPrefix) return undefined;
+
+  const relativeSource = posix.normalize(source.slice(assetPrefix.length));
+  if (relativeSource === "." || relativeSource === ".." || relativeSource.startsWith("../")) return undefined;
+
+  const candidate = `${RENDERER_ASSET_PATH}${relativeSource}`;
   return entries.get(candidate);
 }
 

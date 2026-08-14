@@ -77,6 +77,22 @@ describe("verifyRelease", () => {
     }
   });
 
+  it("accepts the installer named by latest metadata when an older installer remains in the directory", async () => {
+    const artifactsDir = await makeArtifacts({
+      "Todex-0.1.2-win-x64.exe": "older-installer",
+      "Todex-0.1.3-win-x64.exe": "current-installer",
+      "latest.yml": "path: Todex-0.1.3-win-x64.exe\nsha512: fixture-sha512\n",
+    });
+
+    const result = await verifyRelease({
+      artifactsDir,
+      demoUrl: "https://todex-demo.example.com",
+    });
+
+    expect(result.allPassed).toBe(true);
+    expect(result.checks).toContainEqual({ name: "windows-nsis", passed: true });
+  });
+
   it("keeps the CLI default artifact directory aligned with electron-builder output", async () => {
     expect(DEFAULT_RELEASE_ARTIFACTS).toBe("apps/desktop/release");
   });

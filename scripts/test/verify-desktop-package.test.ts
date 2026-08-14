@@ -83,6 +83,18 @@ describe("verifyDesktopPackage", () => {
     expect(result.checks).toContainEqual({ name: "renderer-live-workbench", passed: false });
   });
 
+  it("does not inspect renderer script paths outside the packaged renderer assets directory", async () => {
+    const files = completeArchiveFiles();
+    files["dist/renderer/index.html"] = '<!doctype html><script type="module" src="../main/desktop-run-service.js"></script>';
+    files["dist/main/desktop-run-service.js"] = '<main data-todex-surface="live-workbench"></main>';
+    const archivePath = await makeArchive(files);
+
+    const result = await verifyDesktopPackage({ archivePath });
+
+    expect(result.allPassed).toBe(false);
+    expect(result.checks).toContainEqual({ name: "renderer-live-workbench", passed: false });
+  });
+
   it("requires fixed run IPC channels instead of accepting lookalike method names", async () => {
     const files = completeArchiveFiles();
     files["dist/main/preload.js"] = "contextBridge.exposeInMainWorld('todex', { run: { start: () => undefined, cancel: () => undefined, subscribe: () => undefined } });";
