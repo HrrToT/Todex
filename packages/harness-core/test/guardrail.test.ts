@@ -157,7 +157,10 @@ describe("Guardrail path classification", () => {
 
   it("allows an extended Windows canonical path inside the workspace", () => {
     const resolver: PathResolver = {
-      resolveCanonical: () => "\\\\?\\D:\\workspace\\src\\answer.ts",
+      resolveCanonical: (_workspaceRoot, path) =>
+        path === "."
+          ? "\\\\?\\D:\\workspace"
+          : "\\\\?\\D:\\workspace\\src\\answer.ts",
     };
 
     expect(checkPath("D:\\workspace", "src\\answer.ts", resolver)).toEqual({
@@ -167,7 +170,10 @@ describe("Guardrail path classification", () => {
 
   it("compares Windows canonical paths without case sensitivity", () => {
     const resolver: PathResolver = {
-      resolveCanonical: () => "\\\\?\\D:\\WORKSPACE\\SRC\\answer.ts",
+      resolveCanonical: (_workspaceRoot, path) =>
+        path === "."
+          ? "\\\\?\\D:\\workspace"
+          : "\\\\?\\D:\\WORKSPACE\\SRC\\answer.ts",
     };
 
     expect(checkPath("d:\\workspace", "src\\answer.ts", resolver)).toEqual({
@@ -177,7 +183,10 @@ describe("Guardrail path classification", () => {
 
   it("rejects an extended Windows canonical path outside the workspace", () => {
     const resolver: PathResolver = {
-      resolveCanonical: () => "\\\\?\\D:\\outside\\answer.ts",
+      resolveCanonical: (_workspaceRoot, path) =>
+        path === "."
+          ? "\\\\?\\D:\\workspace"
+          : "\\\\?\\D:\\outside\\answer.ts",
     };
 
     expect(checkPath("D:\\workspace", "../outside/answer.ts", resolver)).toEqual({
