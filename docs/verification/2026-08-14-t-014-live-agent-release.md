@@ -1,6 +1,6 @@
 # T-014 Live Agent Release Candidate Verification
 
-**Status:** `automatic_evidence_recorded_manual_acceptance_and_integration_pending`
+**Status:** `release_published_manual_acceptance_pending`
 
 ## Candidate
 
@@ -55,17 +55,35 @@ This record contains no API key, provider URL, absolute workspace path, fixture
 source text, model output, or raw trace payload. No real model or user workspace
 was used during the automatic checks.
 
+## Release Completion Evidence
+
+PR #23 integrated the original release candidate. PR #26, PR #27, and PR #28
+then corrected Windows workspace-path canonicalization false positives. PR #28
+merged as `c005b00615f7d7bbeb9eb0c7160d454d5ac58cc8`.
+
+The final Windows Release workflow completed successfully:
+https://github.com/HrrToT/Todex/actions/runs/31824988791. It ran frozen-lockfile
+installation, lint, the full test suite, typecheck, build, Windows packaging,
+release verification, and asset upload.
+
+The published release is https://github.com/HrrToT/Todex/releases/tag/v0.1.4.
+It contains:
+
+1. `Todex-0.1.4-win-x64.exe`, 98,936,198 bytes, SHA-256
+   `28493310a46eb0a8b617465ecc0d0c3e56f1dd0ff2ac359b25a6715796962b4e`.
+2. `latest.yml`, 342 bytes, SHA-256
+   `4b841144f4a6d6aeba8b4383f081f636b6e5541b7407dca1f1995a5959dc438f`.
+
 ## Still Required
 
-The following have not occurred and must not be inferred from this document:
+The following remain unrecorded and must not be inferred from the release:
 
 1. A controlled installed-app run using a temporary non-sensitive Node or Python
    fixture.
-2. A user-configured real OpenAI-compatible provider, a safe patch, pending
-   command approval with zero pre-approval execution, one approved command,
-   verification, and a terminal result.
-3. A pushed candidate PR, fresh Node 20 CI for the candidate SHA, review,
-   merge to `main`, tag, GitHub Release, and installer release evidence.
+2. A user-configured real OpenAI-compatible provider run demonstrating a safe
+   patch, the approval boundary, an approved command, verification, and a
+   terminal result.
 
-This is therefore an automatic-evidence checkpoint, not a final release or
-course-submission completion claim.
+The local Node 24 / `better-sqlite3` ABI limitation remains environment-specific.
+The clean Windows CI evidence above is not evidence of either remaining manual
+acceptance item.

@@ -719,7 +719,19 @@ Record cold-start observations, revision diffs, CI links, installer verification
 
 ### Task 14: T-014 Live Desktop Agent Release and Acceptance
 
-**状态：** `automatic_evidence_recorded_manual_acceptance_and_integration_pending`。
+**Release update (2026-08-14):** `v0.1.4` is published at
+https://github.com/HrrToT/Todex/releases/tag/v0.1.4. The final tag peels to
+`c005b00615f7d7bbeb9eb0c7160d454d5ac58cc8` (PR #28 merge). Windows Release
+workflow `31824988791` passed install, lint, full tests, typecheck, build,
+packaging, release verification, and asset upload. Published assets are
+`Todex-0.1.4-win-x64.exe` and `latest.yml`. Manual installed-app and
+real-provider acceptance remain pending and are not implied by this release.
+
+The historical candidate paragraph below predates the release update and is
+retained only as pre-release evidence; its unmerged/unpublished status is
+superseded by the release facts above.
+
+**状态：** `released_manual_acceptance_pending`。
 候选分支为 `codex/t-014-live-agent-release`，候选版本为 `0.1.4`，当前候选 head 为
 `30db539ab241a7551e1e84e8c988a7d64d654db0`。实现链为 `06488c9`、`e5cd852`、
 `57b1753`、`89dff45` 和 `30db539`：Renderer 在 Electron 缺少必需 preload bridge
@@ -730,9 +742,9 @@ preload、live Renderer 和 run IPC bridge，release 校验器验证版本、安
 `verify:desktop-package`；后三项机制演示均通过，包校验五项均通过。完整 `test --run`
 仍有 18 个失败，均为本机 Node 24 要求 `NODE_MODULE_VERSION 137`、而
 `better-sqlite3` 现有原生模块为 ABI 135 的加载失败；不得将其表述为全仓测试通过。
-安装器的受控人工验收、真实 OpenAI-compatible 模型验收、候选 PR、候选 SHA 的 Node 20
-CI、合并、tag 与 Release 均待完成。详见
-[T-014 自动验证记录](verification/2026-08-14-t-014-live-agent-release.md)。
+安装器的受控人工验收与真实 OpenAI-compatible 模型验收仍待完成；PR、CI、合并、tag
+与 Release 已由本节开头的发布事实记录。详见
+[T-014 发布验证记录](verification/2026-08-14-t-014-live-agent-release.md)。
 
 ### Course Requirement Reissue Review
 
