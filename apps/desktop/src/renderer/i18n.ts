@@ -48,6 +48,7 @@ export type MessageKey =
   | "live.notice.modelReady"
   | "live.notice.enterApiKey"
   | "live.notice.credentialSaveFailed"
+  | "live.notice.credentialClearFailed"
   | "live.notice.commandConfirmed"
   | "live.notice.completeSetup"
   | "live.notice.runUpdated"
@@ -128,6 +129,7 @@ const messages: Readonly<Record<Locale, Messages>> = Object.freeze({
     "live.notice.modelReady": "模型已配置，可以开始运行",
     "live.notice.enterApiKey": "请输入 API Key 后保存模型凭据",
     "live.notice.credentialSaveFailed": "保存凭据失败，请重试",
+    "live.notice.credentialClearFailed": "清除凭据失败，请重试",
     "live.notice.commandConfirmed": "已确认项目命令；每次执行仍需审批",
     "live.notice.completeSetup": "请先选择工作区、模型并填写任务",
     "live.notice.runUpdated": "运行状态已更新",
@@ -204,6 +206,7 @@ const messages: Readonly<Record<Locale, Messages>> = Object.freeze({
     "live.notice.modelReady": "Model is configured and ready to run",
     "live.notice.enterApiKey": "Enter an API Key, then save the model credential",
     "live.notice.credentialSaveFailed": "Credential save failed; try again",
+    "live.notice.credentialClearFailed": "Credential clear failed; try again",
     "live.notice.commandConfirmed": "Project command confirmed; each execution still requires approval",
     "live.notice.completeSetup": "Select a workspace and model, then enter a task",
     "live.notice.runUpdated": "Run status updated",

@@ -229,7 +229,7 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   const [credentialEditorOpen, setCredentialEditorOpen] = useState(false);
   const [task, setTask] = useState("");
   const [snapshot, setSnapshot] = useState<LiveSnapshot>();
-  const [noticeKey, setNoticeKey] = useState<"live.notice.chooseWorkspaceAndModel" | "live.notice.modelReady" | "live.notice.enterApiKey" | "live.notice.credentialSaveFailed" | "live.notice.commandConfirmed" | "live.notice.completeSetup" | "live.notice.runUpdated">("live.notice.chooseWorkspaceAndModel");
+  const [noticeKey, setNoticeKey] = useState<"live.notice.chooseWorkspaceAndModel" | "live.notice.modelReady" | "live.notice.enterApiKey" | "live.notice.credentialSaveFailed" | "live.notice.credentialClearFailed" | "live.notice.commandConfirmed" | "live.notice.completeSetup" | "live.notice.runUpdated">("live.notice.chooseWorkspaceAndModel");
   const notice = t(locale, noticeKey);
   const phase = livePhase(snapshot?.run.status);
 
@@ -293,11 +293,15 @@ function LiveWorkbenchApp({ locale, onToggleLocale }: { locale: Locale; onToggle
   }
   async function clearCredential(): Promise<void> {
     if (!model || !surface.credential?.clear) return;
-    await surface.credential.clear(model.configId);
-    setApiKey("");
-    setCredentialConfigured(false);
-    setCredentialEditorOpen(true);
-    setNoticeKey("live.notice.enterApiKey");
+    try {
+      await surface.credential.clear(model.configId);
+      setApiKey("");
+      setCredentialConfigured(false);
+      setCredentialEditorOpen(true);
+      setNoticeKey("live.notice.enterApiKey");
+    } catch {
+      setNoticeKey("live.notice.credentialClearFailed");
+    }
   }
   async function confirmCandidate(candidateId: string): Promise<void> {
     if (!project) return;

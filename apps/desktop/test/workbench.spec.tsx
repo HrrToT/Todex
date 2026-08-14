@@ -82,6 +82,34 @@ describe("Codex-style workbench", () => {
     }
   });
 
+  it("keeps credential state and shows a redacted notice when clear fails", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [{ projectId: "p1", displayName: "fixture", profile: { kinds: [], candidates: [], notices: [] } }] },
+        model: { list: async () => [{ configId: "m1", baseUrl: "https://example.invalid/v1", model: "test-model" }], save: async () => ({ configId: "m1", baseUrl: "https://example.invalid/v1", model: "test-model" }) },
+        credential: {
+          status: async () => ({ configured: true, availability: "available" as const }),
+          clear: async () => { throw new Error("secret-value credentialRef=private-ref"); },
+        },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      await user.click(await screen.findByRole("button", { name: "Clear API Key" }));
+
+      expect(await screen.findByText("Credential clear failed; try again")).toBeVisible();
+      expect(screen.getByText("Credential configured")).toBeVisible();
+      expect(document.body.textContent).not.toContain("secret-value");
+      expect(document.body.textContent).not.toContain("private-ref");
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
   it("switches the live workbench copy without changing the governed bridge", async () => {
     const user = userEvent.setup();
     const setLocale = vi.fn().mockResolvedValue({ locale: "en-US" });
