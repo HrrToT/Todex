@@ -1,6 +1,6 @@
 # T-014: Live Desktop Agent Release and Acceptance
 
-Status: automatic_evidence_recorded_manual_acceptance_and_integration_pending
+Status: released_manual_acceptance_pending
 
 Authoritative plan: [`2026-08-14-t-014-live-agent-release.md`](../superpowers/plans/2026-08-14-t-014-live-agent-release.md)
 
@@ -49,12 +49,19 @@ No other package, contract, harness, public Demo, CI workflow, dependency range,
 
 On completion add: RED/GREEN commands, exact package checks, manual acceptance facts, remaining limitations, commit IDs, PR URL, CI run, merge commit, tag/release URL, and installer version. Do not mark this card complete from source, test, static archive, or process evidence alone.
 
-## Current Evidence Boundary
+## Release Evidence
 
-The local `0.1.4` candidate has automated evidence only: build checks, the
-deterministic mechanism demo, preload smoke, and five release-package structure
-checks. The local full-suite result remains non-green because 18 desktop tests
-cannot load the current `better-sqlite3` binary under Node 24. No installed-app
-controlled run, real-provider run, candidate PR, candidate CI, merge, tag, or
-release is recorded. See
-[`2026-08-14-t-014-live-agent-release.md`](../verification/2026-08-14-t-014-live-agent-release.md).
+- Release: https://github.com/HrrToT/Todex/releases/tag/v0.1.4
+- Final release commit: `c005b00615f7d7bbeb9eb0c7160d454d5ac58cc8` (PR #28 merge).
+- Windows Release workflow: https://github.com/HrrToT/Todex/actions/runs/31824988791
+  completed successfully, including install, lint, tests, typecheck, build,
+  Windows packaging, release verification, and asset upload.
+- Published installer: `Todex-0.1.4-win-x64.exe` (98,936,198 bytes, SHA-256
+  `28493310a46eb0a8b617465ecc0d0c3e56f1dd0ff2ac359b25a6715796962b4e`).
+- Published update manifest: `latest.yml` (342 bytes, SHA-256
+  `4b841144f4a6d6aeba8b4383f081f636b6e5541b7407dca1f1995a5959dc438f`).
+
+The published release does not constitute manual acceptance. A controlled
+installed-app run and a real OpenAI-compatible provider run remain unrecorded.
+The local Node 24 / `better-sqlite3` ABI limitation remains environment-specific;
+the clean Windows CI result is recorded separately from that local limitation.
