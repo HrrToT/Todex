@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Action, ApprovalRequest } from "@todex/contracts";
-import { Guardrail, type PathResolver } from "../src/guardrail.js";
+import { checkPath, Guardrail, normalizePath, type PathResolver } from "../src/guardrail.js";
 import { InMemoryApprovalStore } from "../src/approval-store.js";
 import { inspectUnifiedDiff } from "../src/file-tools.js";
 import type { PatchMetadata } from "../src/file-tools.js";
@@ -149,6 +149,33 @@ function runConfiguredCommand(commandId = "test"): Action {
 }
 
 describe("Guardrail path classification", () => {
+  it("normalizes a Windows extended-length canonical path", () => {
+    expect(normalizePath("\\\\?\\D:\\workspace\\src\\answer.ts")).toBe(
+      "D:/workspace/src/answer.ts",
+    );
+  });
+
+  it("allows an extended Windows canonical path inside the workspace", () => {
+    const resolver: PathResolver = {
+      resolveCanonical: () => "\\\\?\\D:\\workspace\\src\\answer.ts",
+    };
+
+    expect(checkPath("D:\\workspace", "src\\answer.ts", resolver)).toEqual({
+      decision: "allow",
+    });
+  });
+
+  it("rejects an extended Windows canonical path outside the workspace", () => {
+    const resolver: PathResolver = {
+      resolveCanonical: () => "\\\\?\\D:\\outside\\answer.ts",
+    };
+
+    expect(checkPath("D:\\workspace", "../outside/answer.ts", resolver)).toEqual({
+      decision: "deny",
+      denyReason: "workspace_escape",
+    });
+  });
+
   it("denies a path escaping the workspace via ..", () => {
     const { guardrail } = makeGuardrail();
     const decision = guardrail.evaluate(readFile("../.ssh/id_rsa"), makeContext());
