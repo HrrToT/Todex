@@ -108,9 +108,10 @@ docs/               规约、计划、任务卡、验证证据和过程记录
 T-013 已通过 [PR #19](https://github.com/HrrToT/Todex/pull/19) 合并到 `main`，其最终
 CI [run 31708987042](https://github.com/HrrToT/Todex/actions/runs/31708987042) 已通过。
 源码中的桌面端允许用户通过原生目录选择器导入本地 Node.js 或 Python 项目，并保存一个
-OpenAI Chat Completions 兼容的 `baseUrl` 与模型名称。API Key 不由 GUI 收集或传过 IPC；
-必须预先通过 Windows Credential Manager 配置，运行时仅由 Electron main process 读取，
-不会被写入 SQLite、trace、导出数据或 Renderer 运行投影。
+OpenAI Chat Completions 兼容的 `baseUrl` 与模型名称。桌面端可通过一次性、受控的密码输入框
+将 API Key 交给窄类型 `credential.save` IPC，由 Electron main process 写入 Windows Credential
+Manager；界面不会回显或预填 API Key，IPC 也不会返回 API Key 或 credential reference。运行时仅由
+Electron main process 读取，API Key 不会被写入 SQLite、trace、日志、导出数据或 Renderer 查询投影。
 
 真实运行仍有明确治理边界：工作区内的读取、搜索和普通 unified diff 补丁可自动执行；
 每次已确认命令都必须先经过人工审批，审批前不会启动子进程。目录逃逸、符号链接逃逸、

@@ -187,6 +187,19 @@ pnpm.cmd typecheck
 # exit 0
 ```
 
+### Credential Lifecycle Amendment (2026-08-14)
+
+The preceding pre-merge record accurately describes the security boundary at that
+point in time. It was superseded by the final-submission-readiness work after a
+separate design decision: the desktop now exposes only a strict, one-way
+`credential.save` IPC for a password field's short-lived value. The handler
+delegates to the main-process Credential Manager adapter and returns only
+`{ configured: true }`. It does not expose credential reads or references, and
+the renderer does not display, pre-fill, persist, trace, or query API keys.
+See `docs/verification/2026-08-14-final-submission-readiness.md` for the
+corresponding RED/GREEN and secrecy evidence. The remaining evidence boundaries
+in this historical record still apply.
+
 ## v0.1.2 Candidate Publication (2026-08-14)
 
 PR [#21](https://github.com/HrrToT/Todex/pull/21) merged the desktop candidate as
