@@ -53,5 +53,10 @@ Node.js/Python 仓库、确认候选命令、配置 OpenAI Chat Completions 兼�
   `bc405e38b5220640d5fa92948ad0e90c527699f9`。
 - 该 PR 的 GitHub Actions CI 已通过：
   https://github.com/HrrToT/Todex/actions/runs/31708987042
+- PR [#21](https://github.com/HrrToT/Todex/pull/21) 已将包含 T-013 的 Windows x64 候选版
+  合并到 `main`，合并提交为 `e10e597e41a7dd489895bcc374a863db80cef7e8`；CI
+  [31769832842](https://github.com/HrrToT/Todex/actions/runs/31769832842) 已通过，发布
+  [`v0.1.2`](https://github.com/HrrToT/Todex/releases/tag/v0.1.2) 提供 NSIS 安装器、
+  `latest.yml` 和 blockmap。
 - 本卡不因此宣称最终发布或人工验收完成。Windows 已安装应用交互验收与在用户选择的
   非敏感仓库上进行真实模型验收仍是开放证据项；Render 公共 Demo 仍必须保持 Mock-only。
