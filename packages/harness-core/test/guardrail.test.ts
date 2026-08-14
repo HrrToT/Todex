@@ -151,7 +151,7 @@ function runConfiguredCommand(commandId = "test"): Action {
 describe("Guardrail path classification", () => {
   it("normalizes a Windows extended-length canonical path", () => {
     expect(normalizePath("\\\\?\\D:\\workspace\\src\\answer.ts")).toBe(
-      "D:/workspace/src/answer.ts",
+      "d:/workspace/src/answer.ts",
     );
   });
 
