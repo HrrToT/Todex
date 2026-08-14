@@ -1,0 +1,8 @@
+image: node:20
+
+unit-test:
+  script:
+    - corepack enable
+    - corepack prepare pnpm@10.12.1 --activate
+    - pnpm install --frozen-lockfile
+    - pnpm test --run

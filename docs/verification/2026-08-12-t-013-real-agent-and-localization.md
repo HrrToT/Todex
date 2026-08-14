@@ -186,3 +186,27 @@ pnpm.cmd --filter @todex/desktop test --run ipc.test.ts workbench.spec.tsx deskt
 pnpm.cmd typecheck
 # exit 0
 ```
+
+## v0.1.2 Candidate Publication (2026-08-14)
+
+PR [#21](https://github.com/HrrToT/Todex/pull/21) merged the desktop candidate as
+`e10e597e41a7dd489895bcc374a863db80cef7e8`. Its GitHub Actions
+[run 31769832842](https://github.com/HrrToT/Todex/actions/runs/31769832842) passed.
+
+The local Windows x64 packaging sequence ran `electron-rebuild` for `better-sqlite3` and
+`keytar`, `pnpm.cmd --filter @todex/desktop run smoke`, and
+`pnpm.cmd --filter @todex/desktop run package:win`. The generated installer was
+`Todex-0.1.2-win-x64.exe` with SHA-256
+`C0513AAA38E9982A5F084FB3BEC459D6281EBDA4120EBEFAED536E23E999CFE1`. The unpacked
+`Todex.exe` was launched with an isolated temporary user-data directory; its Electron main,
+renderer, and helper processes remained running. The public release is
+[`v0.1.2`](https://github.com/HrrToT/Todex/releases/tag/v0.1.2) and contains that installer,
+`latest.yml`, and the blockmap.
+
+The focused local desktop regression set passed 69 tests, plus `pnpm.cmd typecheck`,
+`pnpm.cmd lint`, and `git diff --check`. The Node 24 ABI limitation remains: after native
+modules are rebuilt for Electron, local Node 24 cannot load those Electron binaries for the
+SQLite/WorkspaceHost test files. GitHub CI is the compatible complete-suite evidence. This
+publication still does not prove an external model request, use of a real API key, a user
+repository mutation, real command execution, an installed-app interaction, or scoped
+real-model acceptance.
