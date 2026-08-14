@@ -66,11 +66,16 @@ HTTPS Demo URL：
 ```powershell
 $env:TODEX_DEMO_URL = "https://todex-mock-demo.onrender.com"
 $env:TODEX_RELEASE_ARTIFACTS = "apps/desktop/release"
+pnpm.cmd package:desktop-release
+pnpm.cmd verify:desktop-package
 pnpm.cmd verify:release
 ```
 
 `verify:release` 会检查 `Todex-<version>-win-x64.exe`、`latest.yml` 中的更新
-元数据，以及 Demo URL。它不会替代实际安装或界面验收。
+元数据，以及 Demo URL。`verify:desktop-package` 进一步检查候选 `app.asar` 是否包含
+Electron preload、真实运行服务、Renderer 文档与 Live Workbench 标记，以及受限的
+`run.start`、`run.cancel`、`run.subscribe` preload 通道。两者都不会读取用户工作区、
+模型配置或凭据，也都不会替代实际安装、界面或真实模型验收。
 
 Windows 安装包为未签名 NSIS 产物。下载正式发布版本时，Windows SmartScreen
 可能显示未识别应用提示；只应从项目的 GitHub Release 下载，并在安装前核对
