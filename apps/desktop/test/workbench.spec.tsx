@@ -35,6 +35,53 @@ describe("Codex-style workbench", () => {
     Object.defineProperty(window, "todex", { configurable: true, value: undefined });
   });
 
+  it("uses a transient password field for credential save, update, and clear", async () => {
+    const user = userEvent.setup();
+    const save = vi.fn().mockResolvedValue({ configured: true });
+    const clear = vi.fn().mockResolvedValue({ configured: false });
+    let configured = false;
+    Object.defineProperty(window, "todex", {
+      configurable: true,
+      value: {
+        run: { start: async () => undefined, snapshot: async () => undefined, cancel: async () => undefined },
+        project: { importSelectedWorkspace: async () => undefined, list: async () => [{ projectId: "p1", displayName: "fixture", profile: { kinds: [], candidates: [], notices: [] } }] },
+        model: { list: async () => [{ configId: "m1", baseUrl: "https://example.invalid/v1", model: "test-model" }], save: async () => ({ configId: "m1", baseUrl: "https://example.invalid/v1", model: "test-model" }) },
+        credential: {
+          status: async () => ({ configured, availability: "available" as const }),
+          save: async (configId: string, apiKey: string) => { await save(configId, apiKey); configured = true; return { configured: true as const }; },
+          clear: async (configId: string) => { await clear(configId); configured = false; return { configured: false as const }; },
+        },
+      },
+    });
+
+    try {
+      render(<WorkbenchApp locale="en-US" />);
+      const apiKey = await screen.findByLabelText("API Key");
+      expect(apiKey).toHaveAttribute("type", "password");
+      expect(apiKey).toHaveAttribute("autocomplete", "off");
+      await user.type(apiKey, "secret-value");
+      await user.click(screen.getByRole("button", { name: "Save API Key" }));
+
+      expect(save).toHaveBeenCalledWith("m1", "secret-value");
+      expect(apiKey).toHaveValue("");
+      expect(document.body.textContent).not.toContain("secret-value");
+      expect(await screen.findByText("Credential configured")).toBeVisible();
+
+      await user.click(screen.getByRole("button", { name: "Update API Key" }));
+      const updatedApiKey = screen.getByLabelText("API Key");
+      expect(updatedApiKey).toHaveValue("");
+      await user.type(updatedApiKey, "replacement-value");
+      await user.click(screen.getByRole("button", { name: "Save API Key" }));
+      expect(save).toHaveBeenLastCalledWith("m1", "replacement-value");
+
+      await user.click(screen.getByRole("button", { name: "Clear API Key" }));
+      expect(clear).toHaveBeenCalledWith("m1");
+      expect(await screen.findByLabelText("API Key")).toHaveValue("");
+    } finally {
+      Object.defineProperty(window, "todex", { configurable: true, value: undefined });
+    }
+  });
+
   it("switches the live workbench copy without changing the governed bridge", async () => {
     const user = userEvent.setup();
     const setLocale = vi.fn().mockResolvedValue({ locale: "en-US" });

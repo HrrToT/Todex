@@ -38,10 +38,16 @@ export type MessageKey =
   | "live.noWorkspaceSelected"
   | "live.saveModelConfiguration"
   | "live.apiKeyPlaceholder"
+  | "live.saveApiKey"
+  | "live.updateApiKey"
+  | "live.credentialConfigured"
+  | "live.clearApiKey"
+  | "live.credentialUnavailable"
   | "live.confirmCandidate"
   | "live.notice.chooseWorkspaceAndModel"
   | "live.notice.modelReady"
   | "live.notice.enterApiKey"
+  | "live.notice.credentialSaveFailed"
   | "live.notice.commandConfirmed"
   | "live.notice.completeSetup"
   | "live.notice.runUpdated"
@@ -112,10 +118,16 @@ const messages: Readonly<Record<Locale, Messages>> = Object.freeze({
     "live.noWorkspaceSelected": "未选择工作区",
     "live.saveModelConfiguration": "保存模型配置",
     "live.apiKeyPlaceholder": "请先在 Credential Manager 中保存凭据",
+    "live.saveApiKey": "保存 API Key",
+    "live.updateApiKey": "更新 API Key",
+    "live.credentialConfigured": "凭据已配置",
+    "live.clearApiKey": "清除 API Key",
+    "live.credentialUnavailable": "凭据服务不可用",
     "live.confirmCandidate": "确认候选命令",
     "live.notice.chooseWorkspaceAndModel": "请选择工作区并配置模型",
     "live.notice.modelReady": "模型已配置，可以开始运行",
     "live.notice.enterApiKey": "请输入 API Key 后保存模型凭据",
+    "live.notice.credentialSaveFailed": "保存凭据失败，请重试",
     "live.notice.commandConfirmed": "已确认项目命令；每次执行仍需审批",
     "live.notice.completeSetup": "请先选择工作区、模型并填写任务",
     "live.notice.runUpdated": "运行状态已更新",
@@ -182,10 +194,16 @@ const messages: Readonly<Record<Locale, Messages>> = Object.freeze({
     "live.noWorkspaceSelected": "No workspace selected",
     "live.saveModelConfiguration": "Save model configuration",
     "live.apiKeyPlaceholder": "Save credentials in Credential Manager first",
+    "live.saveApiKey": "Save API Key",
+    "live.updateApiKey": "Update API Key",
+    "live.credentialConfigured": "Credential configured",
+    "live.clearApiKey": "Clear API Key",
+    "live.credentialUnavailable": "Credential unavailable",
     "live.confirmCandidate": "Confirm candidate command",
     "live.notice.chooseWorkspaceAndModel": "Select a workspace and configure a model",
     "live.notice.modelReady": "Model is configured and ready to run",
     "live.notice.enterApiKey": "Enter an API Key, then save the model credential",
+    "live.notice.credentialSaveFailed": "Credential save failed; try again",
     "live.notice.commandConfirmed": "Project command confirmed; each execution still requires approval",
     "live.notice.completeSetup": "Select a workspace and model, then enter a task",
     "live.notice.runUpdated": "Run status updated",
