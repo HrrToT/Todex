@@ -120,7 +120,7 @@ export class NodeWorkspaceFs implements WorkspaceFs, PathResolver {
 
   private canonicalize(candidate: string, allowMissing: boolean): string {
     try {
-      return realpathSync(candidate);
+      return realpathSync.native(candidate);
     } catch (error) {
       if (!allowMissing || !isMissing(error)) {
         throw error;
