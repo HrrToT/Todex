@@ -11,24 +11,8 @@ harness。它将受治理的文件操作、命令验证、人工审批、运行 
 - 公网演示：受限 Mock Demo 已部署到
   [Render](https://todex-mock-demo.onrender.com)。它只提供固定场景，不接收
   API Key，不访问访问者本地文件，不提供自由 shell 或任意 patch。
-- 已发布版本：[`v0.1.0`](https://github.com/HrrToT/Todex/releases/tag/v0.1.0)
-  的安装包和发布元数据可下载，但实机发现其 Renderer 会显示白屏。请暂勿将
-  `v0.1.0` 用作桌面端验证对象。
-- 修复版本：[`v0.1.1`](https://github.com/HrrToT/Todex/releases/tag/v0.1.1)
-  已发布。它修复了打包 Renderer 的加载路径；发布页提供
-  `Todex-0.1.1-win-x64.exe`、`latest.yml` 和校验信息。`v0.1.1` 的安装器已在
-  本机完成完整性校验并安装，安装目录不再包含 `v0.1.0` 的空白 `data:` 页面入口。
-- 当前桌面候选版：[`v0.1.2`](https://github.com/HrrToT/Todex/releases/tag/v0.1.2)
-  已发布。它包含已合并的 T-013 受治理真实 Agent 路径，并提供
-  `Todex-0.1.2-win-x64.exe`、`latest.yml` 和 blockmap。该版本已完成 CI、目标
-  Electron smoke、打包和解包应用启动检查；真实外部模型与用户仓库的人工验收仍未完成。
 - 当前发布版：[`v0.1.4`](https://github.com/HrrToT/Todex/releases/tag/v0.1.4)
-  已发布，tag 解引用至 PR #28 的合并提交
-  `c005b00615f7d7bbeb9eb0c7160d454d5ac58cc8`。Windows Release workflow
-  `31824988791` 已通过安装、lint、全量测试、typecheck、build、Windows 打包、
-  发布校验和资产上传；发布页提供 `Todex-0.1.4-win-x64.exe` 与 `latest.yml`。
-  已安装应用的受控人工验收与真实 OpenAI-compatible 供给方验收仍未记录，不能由
-  发布、CI 或静态包校验推断为已完成。
+  已发布
 
 ## 能力边界
 
@@ -137,13 +121,6 @@ Electron main process 读取，API Key 不会被写入 SQLite、trace、日志�
 或模型 URL。
 
 - 当前正式桌面发布仅面向 Windows x64；macOS 和 Linux 不在本版本发布范围内。
-- `v0.1.0` 的安装版存在已确认的 Renderer 白屏问题；请使用已发布的
-  `v0.1.1`。正式安装后的可见工作台内容仍应由使用者完成一次人工确认；安装文件
-  与静态包内容核验不等同于完整交互式 Agent 验收。
-- `v0.1.1` 早于 T-013 合并，因此不包含本节所述的真实 Agent 集成。`v0.1.2` 是包含
-  该集成的 Windows x64 候选发布；每次确认命令与高风险补丁仍须人工审批，不能视为
-  自治执行器。
-- 已有 T-009 环境中曾记录 Electron 生命周期/关闭阶段的 `0xC0000005`；它不应
-  被解释为模型、凭据或工具执行成功/失败的证据。
+
 - 本项目不是自治执行器。任何真实模型、凭据、文件写入或命令执行都应在桌面端
   的受治理流程和用户可见审批下进行。
